@@ -1,8 +1,44 @@
 var _ymtCachedPlaylistData = null;
+function ymtDbg() {}
+
+function ymtNorm(s) {
+    try {
+        if (typeof normalizeText === 'function') return normalizeText(s);
+    } catch (e) {}
+    return (s || '').toLowerCase().trim();
+}
+
+function ymtDataMatchesDom(tracks) {
+    try {
+        var rows = document.querySelectorAll('[class*="CommonTrack_root"]');
+        if (!rows.length || !tracks || !tracks.length) return true;
+        var titles = {};
+        var lim = Math.min(tracks.length, 150);
+        for (var i = 0; i < lim; i++) {
+            var tt = ymtNorm(tracks[i].title);
+            if (tt) titles[tt] = 1;
+        }
+        var checked = 0;
+        for (var r = 0; r < rows.length && checked < 3; r++) {
+            var rt = ymtNorm(rows[r].textContent);
+            if (!rt) continue;
+            checked++;
+            var ok = false;
+            for (var key in titles) {
+                if (rt.indexOf(key) !== -1) { ok = true; break; }
+            }
+            if (!ok) return false;
+        }
+        return true;
+    } catch (e) {
+        return true;
+    }
+}
 
 function getPlaylistKey() {
     var args = getArgsByLocation();
-    return args.kind ? String(args.kind) : '';
+    if (!args.kind) return '';
+    return (args.owner ? String(args.owner) + ':' : '') + String(args.kind);
 }
 
 function readInterceptedData() {
@@ -28,9 +64,11 @@ function readInterceptedData() {
 function ensurePlaylistData(callback) {
     var data = readInterceptedData();
     if (data && data.tracks && data.tracks.length > 0) {
+        ymtDbg('cache hit, key:', data._playlistKey, '| location:', location.pathname, '| tracks:', data.tracks.length);
         callback(data);
         return;
     }
+    _ymtDebugLog = []; ymtDbg('cache miss, fetching for:', location.pathname);
     fetchPlaylistDataForCurrentPage(function (result) {
         if (result && result.tracks && result.tracks.length > 0) {
             callback(result);
@@ -40,65 +78,221 @@ function ensurePlaylistData(callback) {
     });
 }
 
-function fetchPlaylistDataForCurrentPage(callback) {
+function fetchPlaylistDataForCurrentPage(callback, attempt) {
+    attempt = attempt || 0;
     var meta;
     var args = getArgsByLocation();
     if (args.owner && args.kind) {
         meta = { ownerUid: args.owner, kind: args.kind, title: '' };
-    } else if (args.kind && String(args.kind).indexOf('-') === -1) {
-        meta = { ownerUid: typeof uid !== 'undefined' ? uid : null, kind: args.kind, title: '' };
-    } else {
-        try {
-            var metaRaw = document.documentElement.getAttribute('data-ymt-playlist-meta');
-            if (metaRaw) meta = JSON.parse(metaRaw);
-        } catch (e) {}
+    } else if (args.kind && String(args.kind).indexOf('lk.') === 0) {
+        var lkUid = typeof uid !== 'undefined' ? uid : null;
+        if (!lkUid) {
+            try {
+                var lkMetaRaw = document.documentElement.getAttribute('data-ymt-playlist-meta');
+                if (lkMetaRaw) {
+                    var lm = JSON.parse(lkMetaRaw);
+                    if (lm && lm.kind === 3 && lm.ownerUid) lkUid = lm.ownerUid;
+                }
+            } catch (e) {}
+        }
+        if (!lkUid) { callback(null); return; }
+        meta = { ownerUid: lkUid, kind: 3, title: '' };
+    } else if (args.kind) {
+        var isUuidKind = String(args.kind).indexOf('-') !== -1;
+        if (!isUuidKind) {
+            try {
+                var metaRaw = document.documentElement.getAttribute('data-ymt-playlist-meta');
+                if (metaRaw) {
+                    var m = JSON.parse(metaRaw);
+                    if (m && m.kind) meta = { ownerUid: m.ownerUid || null, kind: m.kind, title: m.title || '', _fromAttr: true };
+                }
+            } catch (e) {}
+            if (!meta || !meta.kind) {
+                if (attempt < 10) {
+                    setTimeout(function () { fetchPlaylistDataForCurrentPage(callback, attempt + 1); }, 500);
+                } else {
+                    ymtDbg('numeric page: no meta, giving up');
+                    callback(null);
+                }
+                return;
+            }
+        } else if (attempt === 0) {
+            meta = { ownerUid: null, kind: args.kind, title: '' };
+            ymtDbg('uuid page: trying direct endpoint', args.kind);
+        } else {
+            try {
+                var metaRaw2 = document.documentElement.getAttribute('data-ymt-playlist-meta');
+                if (metaRaw2) {
+                    var m2 = JSON.parse(metaRaw2);
+                    if (m2 && m2.kind) meta = { ownerUid: m2.ownerUid || null, kind: m2.kind, title: m2.title || '', _fromAttr: true };
+                }
+            } catch (e) {}
+            if (!meta || !meta.kind) {
+                if (attempt < 20) {
+                    setTimeout(function () { fetchPlaylistDataForCurrentPage(callback, attempt + 1); }, 500);
+                } else {
+                    ymtDbg('uuid page: player meta never arrived, giving up');
+                    callback(null);
+                }
+                return;
+            }
+            ymtDbg('uuid page resolved via player meta: kind', meta.kind, '| owner', meta.ownerUid);
+        }
     }
 
     if (!meta || !meta.kind) { callback(null); return; }
 
     var d = location.hostname.split('.')[2];
-    var isUuid = String(meta.kind).indexOf('-') !== -1;
-    var url = isUuid
-        ? 'https://api.music.yandex.' + d + '/playlists/' + meta.kind
-        : 'https://api.music.yandex.' + d + '/users/' + meta.ownerUid + '/playlists/' + meta.kind;
+    var url = meta.ownerUid
+        ? 'https://api.music.yandex.' + d + '/users/' + meta.ownerUid + '/playlists/' + meta.kind
+        : 'https://api.music.yandex.' + d + '/playlists/' + meta.kind;
 
     url += (url.indexOf('?') === -1 ? '?' : '&') + 'richTracks=true';
 
     requestGET(url, function (response) {
         try {
             var data = response.result || response;
-            if (!data || !data.tracks) { callback(null); return; }
-            var tracks = [];
-            for (var i = 0; i < data.tracks.length; i++) {
-                var pos = data.tracks[i];
-                var t = pos.track || pos;
-                if (!t || !t.id) continue;
-                var artists = [];
-                if (t.artists) {
-                    for (var j = 0; j < t.artists.length; j++) {
-                        if (t.artists[j].name) artists.push(t.artists[j].name);
+            if (!data || !data.tracks) {
+                ymtDbg('playlist resp has NO tracks:', JSON.stringify(response).slice(0, 180));
+                if (attempt === 0 && String(meta.kind).indexOf('-') !== -1) {
+                    setTimeout(function () { fetchPlaylistDataForCurrentPage(callback, 1); }, 300);
+                    return;
+                }
+                callback(null);
+                return;
+            }
+            var expected = data.trackCount || data.tracks.length;
+            var fallbackRaw = data.tracks.slice();
+            var allRaw = [];
+            ymtDbg('URL:', url);
+            ymtDbg('playlist endpoint:', data.tracks.length, 'entries | trackCount:', expected);
+
+            function finish() {
+                var tracks = [];
+                var skippedUnavailable = 0;
+                var noTitle = 0;
+                for (var i = 0; i < allRaw.length; i++) {
+                    var pos = allRaw[i];
+                    var t = pos.track || pos;
+                    if (!t || !t.id) continue;
+                    if (t.available === false) { skippedUnavailable++; continue; }
+                    var artists = [];
+                    if (t.artists) {
+                        for (var j = 0; j < t.artists.length; j++) {
+                            if (t.artists[j].name) artists.push(t.artists[j].name);
+                        }
                     }
+                    if (!t.title) noTitle++;
+                    var coverUri = '';
+                    if (t.albums && t.albums.length > 0 && t.albums[0].coverUri) {
+                        coverUri = t.albums[0].coverUri;
+                    }
+                    tracks.push({
+                        id: t.id,
+                        title: t.title || '',
+                        artists: artists,
+                        coverUri: coverUri,
+                        durationMs: t.durationMs || 0,
+                        releaseDate: t.releaseDate || (t.albums && t.albums[0] && t.albums[0].releaseDate) || '',
+                        trackAddedAt: pos.trackAddedAt || 0,
+                    });
                 }
-                var coverUri = '';
-                if (t.albums && t.albums.length > 0 && t.albums[0].coverUri) {
-                    coverUri = t.albums[0].coverUri;
+                ymtDbg('RESULT tracks:', tracks.length, skippedUnavailable ? ('| hidden unavailable: ' + skippedUnavailable) : '', noTitle ? ('| NO-TITLE ' + noTitle) : '');
+                if (meta._fromAttr && !ymtDataMatchesDom(tracks)) {
+                    ymtDbg('DOM MISMATCH - stale meta suspected, retrying');
+                    document.documentElement.removeAttribute('data-ymt-playlist-meta');
+                    if (attempt < 24) {
+                        setTimeout(function () { fetchPlaylistDataForCurrentPage(callback, attempt + 1); }, 700);
+                    } else {
+                        callback(null);
+                    }
+                    return;
                 }
-                tracks.push({
-                    id: t.id,
-                    title: t.title || '',
-                    artists: artists,
-                    coverUri: coverUri,
-                    durationMs: t.durationMs || 0,
-                    releaseDate: t.releaseDate || (t.albums && t.albums[0] && t.albums[0].releaseDate) || '',
-                    trackAddedAt: pos.trackAddedAt || 0,
+                if (!noTitle) {
+                    var result = { title: data.title || meta.title || '', tracks: tracks, _playlistKey: getPlaylistKey() };
+                    _ymtCachedPlaylistData = result;
+                    document.documentElement.setAttribute('data-ymt-playlist', JSON.stringify(result));
+                    callback(result);
+                } else {
+                    enrichBriefTracks(tracks, function (enriched) {
+                        var result2 = { title: data.title || meta.title || '', tracks: enriched, _playlistKey: getPlaylistKey() };
+                        _ymtCachedPlaylistData = result2;
+                        document.documentElement.setAttribute('data-ymt-playlist', JSON.stringify(result2));
+                        callback(result2);
+                    });
+                }
+            }
+
+            var base = 'https://api.music.yandex.' + d + '/playlists/' + meta.kind + '/tracks';
+            var page = 0;
+            var PAGE_SIZE = 150;
+
+            function loadNextPage() {
+                var purl = base + '?page=' + page + '&size=' + PAGE_SIZE + '&richTracks=true';
+                requestGET(purl, function (resp) {
+                    try {
+                        if (!resp) { ymtDbg('batch page', page, '-> NULL/empty response'); }
+                        var rdata = resp && (resp.result || resp);
+                        var arr = rdata && rdata.tracks ? rdata.tracks : [];
+                        ymtDbg('batch page', page, '->', arr.length, 'entries', rdata && rdata.pager ? ('| pager total: ' + (rdata.pager.total !== undefined ? rdata.pager.total : '?') + ' perPage: ' + (rdata.pager.perPage !== undefined ? rdata.pager.perPage : '?')) : '');
+                        if (!arr.length) ymtDbg('batch resp snippet:', JSON.stringify(resp).slice(0, 200));
+                        if (page === 0 && arr.length === 0) {
+                            allRaw = fallbackRaw;
+                        } else {
+                            allRaw = allRaw.concat(arr);
+                        }
+                        if (!arr.length || page >= 29) {
+                            finish();
+                            return;
+                        }
+                        page++;
+                        loadNextPage();
+                    } catch (e) {
+                        finish();
+                    }
                 });
             }
-            var result = { title: data.title || meta.title || '', tracks: tracks, _playlistKey: getPlaylistKey() };
-            _ymtCachedPlaylistData = result;
-            document.documentElement.setAttribute('data-ymt-playlist', JSON.stringify(result));
-            callback(result);
+            loadNextPage();
         } catch (e) {
             callback(null);
+        }
+    });
+}
+
+function enrichBriefTracks(tracks, done) {
+    var ids = [];
+    for (var i = 0; i < tracks.length; i++) {
+        if (!tracks[i].title) ids.push(String(tracks[i].id));
+    }
+    ymtDbg('enriching', ids.length, 'brief entries via POST /tracks');
+    var d = location.hostname.split('.')[2];
+    requestPOST('https://api.music.yandex.' + d + '/tracks', 'ids=' + encodeURIComponent(ids.join(',')), function (resp) {
+        try {
+            var full = resp.result || [];
+            var byId = {};
+            for (var i = 0; i < full.length; i++) {
+                if (full[i] && full[i].id !== undefined) byId[String(full[i].id)] = full[i];
+            }
+            for (var j = 0; j < tracks.length; j++) {
+                var t = tracks[j];
+                if (t.title) continue;
+                var f = byId[String(t.id)];
+                if (!f) continue;
+                var artists = [];
+                if (f.artists) {
+                    for (var k = 0; k < f.artists.length; k++) {
+                        if (f.artists[k].name) artists.push(f.artists[k].name);
+                    }
+                }
+                t.title = f.title || '';
+                t.artists = artists;
+                t.durationMs = f.durationMs || 0;
+                t.coverUri = (f.albums && f.albums[0] && f.albums[0].coverUri) || '';
+                t.releaseDate = f.releaseDate || (f.albums && f.albums[0] && f.albums[0].releaseDate) || '';
+            }
+            done(tracks);
+        } catch (e) {
+            done(tracks);
         }
     });
 }

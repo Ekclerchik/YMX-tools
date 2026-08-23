@@ -6,6 +6,7 @@ var JUMP_TRACK_STYLE_ID = 'ymt-jump-style';
 
 function ensureJumpTrackStyle() {
     if (document.getElementById(JUMP_TRACK_STYLE_ID)) return;
+    console.log('[YMT] jump-to-track build: fullscreen-fix v2');
     var s = document.createElement('style');
     s.id = JUMP_TRACK_STYLE_ID;
     s.textContent = '@keyframes ymt-jump-pulse{0%{background:rgba(255,210,0,0.35)}100%{background:transparent}}.'
@@ -72,11 +73,11 @@ var _searchNav = {
     counterEl: null,
     resultsList: null,
     observer: null,
+    inertObserver: null,
     survivalTimer: null,
 };
 
 function initJumpToTrack() {
-    console.log('[Y-Music-Tools Jump] initJumpToTrack called, state:', JUMP_TRACK_CURRENT_STATE);
     if (!JUMP_TRACK_CURRENT_STATE) return;
     var args = getArgsByLocation();
     if (!args.kind || args.kind === '7') return;
@@ -85,17 +86,17 @@ function initJumpToTrack() {
 }
 
 function startSearchWatcher() {
-    document.querySelectorAll('.ymt-jump-arrowbar, .ymt-jump-wrap, .ymt-jump-results, .ymt-jump-arrowbar').forEach(function(el){
+    document.querySelectorAll('.ymt-jump-arrowbar, .ymt-jump-wrap, .ymt-jump-results').forEach(function(el){
         if (el.parentElement) el.remove();
     });
     cleanupSearchNav();
 
     var btn = document.querySelector('button[aria-label="\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043f\u043e\u0438\u0441\u043a"]');
-    if (btn) {
+    if (btn && !_searchNav.closeBtn) {
         setupSearchNav(btn);
-        return;
     }
 
+    if (_searchNav.observer) return;
     _searchNav.observer = new MutationObserver(function () {
         var btn = document.querySelector('button[aria-label="\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u043f\u043e\u0438\u0441\u043a"]');
         if (btn && !_searchNav.closeBtn) {
@@ -103,7 +104,9 @@ function startSearchWatcher() {
         }
         if (!document.querySelector('[class*="SearchPlaylist"]') && _searchNav.closeBtn) {
             cleanupSearchNav();
+            return;
         }
+        syncArrowBarVisibility();
     });
     _searchNav.observer.observe(document.body, { childList: true, subtree: true });
 }
@@ -189,6 +192,11 @@ function setupSearchNav(closeBtn) {
     document.body.appendChild(arrowBar);
     _searchNav.arrowContainer = arrowBar;
 
+    _searchNav.inertObserver = new MutationObserver(function () {
+        syncArrowBarVisibility();
+    });
+    _searchNav.inertObserver.observe(arrowBar, { attributes: true, attributeFilter: ['data-floating-ui-inert', 'aria-hidden'] });
+
     var navRow = document.createElement('div');
     navRow.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:3px;';
     arrowBar.appendChild(navRow);
@@ -204,6 +212,8 @@ function setupSearchNav(closeBtn) {
     var downBtn = createArrowImgButton(UP_ARROW_IMG, '\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0439 \u0442\u0440\u0435\u043a', navigateNextMatch, true);
     navRow.appendChild(downBtn);
     _searchNav.downBtn = downBtn;
+
+    navRow.appendChild(createTextButton('\u2715', '\u0417\u0430\u043a\u0440\u044b\u0442\u044c', closeSearchResults));
 
     var resultsList = document.createElement('div');
     resultsList.className = 'ymt-jump-results';
@@ -243,6 +253,51 @@ function createArrowImgButton(src, label, handler, rotated) {
     btn.addEventListener('mouseleave', function () { btn.style.background = 'transparent'; });
     btn.addEventListener('click', function (e) { e.stopPropagation(); handler(); });
     return btn;
+}
+
+function createTextButton(glyph, label, handler) {
+    var btn = document.createElement('button');
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('aria-label', label);
+    btn.textContent = glyph;
+    btn.style.cssText = [
+        'border:none',
+        'background:transparent',
+        'cursor:pointer',
+        'display:flex',
+        'align-items:center',
+        'justify-content:center',
+        'width:40px',
+        'height:40px',
+        'padding:0',
+        'margin:0 0 0 auto',
+        'border-radius:50%',
+        'transition:background .15s',
+        'color:rgba(255,255,255,0.6)',
+        'font-size:20px',
+        'line-height:1',
+    ].join(';');
+    btn.addEventListener('mouseenter', function () { btn.style.background = 'rgba(255,255,255,0.1)'; btn.style.color = '#fff'; });
+    btn.addEventListener('mouseleave', function () { btn.style.background = 'transparent'; btn.style.color = 'rgba(255,255,255,0.6)'; });
+    btn.addEventListener('click', function (e) { e.stopPropagation(); handler(); });
+    return btn;
+}
+
+function closeSearchResults() {
+    for (var i = 0; i < _searchNav.matches.length; i++) {
+        var m = _searchNav.matches[i];
+        if (m.element) {
+            m.element.classList.remove(JUMP_TRACK_HIGHLIGHT_CLASS);
+            m.element.style.background = '';
+            m.element.style.borderRadius = '';
+            m.element.removeAttribute('data-ymt-highlight');
+            m.element = null;
+        }
+    }
+    _searchNav.matches = [];
+    _searchNav.currentIndex = -1;
+    if (_searchNav.input) _searchNav.input.value = '';
+    updateNavDisplay();
 }
 
 function createCounterElement() {
@@ -289,18 +344,16 @@ function findSearchMatchesInData(tracks, normQuery) {
             matches.push({ index: i, element: null, track: t });
         }
     }
-    console.log('[Y-Music-Tools Jump] Found', matches.length, 'matches for:', normQuery);
     return matches;
 }
 
 function jumpToTrackByIndex(matchPos) {
-    console.log('[Y-Music-Tools Jump] jumpToTrackByIndex called, matchPos:', matchPos, 'matches:', _searchNav.matches.length);
     if (matchPos < 0 || matchPos >= _searchNav.matches.length) {
-        console.log('[Y-Music-Tools Jump] jumpToTrackByIndex: out of range, returning false');
         return false;
     }
 
     var prevMatch = _searchNav.matches[_searchNav.currentIndex];
+    var prevEl = prevMatch ? prevMatch.element : null;
     if (prevMatch && prevMatch.element) {
         prevMatch.element.classList.remove(JUMP_TRACK_HIGHLIGHT_CLASS);
         prevMatch.element.style.background = '';
@@ -315,8 +368,7 @@ function jumpToTrackByIndex(matchPos) {
     var match = _searchNav.matches[matchPos];
     var trackIndex = match.index;
 
-    var el = findTrackElementByIndex(trackIndex);
-    console.log('[Y-Music-Tools Jump] findTrackElementByIndex(', trackIndex, ') returned:', !!el, el);
+    var el = findTrackElementByIndex(trackIndex, prevEl);
     if (el) {
         match.element = el;
         doHighlight(el);
@@ -327,31 +379,27 @@ function jumpToTrackByIndex(matchPos) {
 
     var container = findScrollContainer();
     if (!container) {
-        console.log('[Y-Music-Tools Jump] findScrollContainer returned null, aborting');
         return false;
     }
-    console.log('[Y-Music-Tools Jump] findScrollContainer:', container, 'scrollHeight:', container.scrollHeight, 'clientHeight:', container.clientHeight);
 
     var trackHeight = estimateTrackHeight();
     var maxScroll = container.scrollHeight - container.clientHeight;
     var targetScrollTop = trackIndex * trackHeight - Math.floor((container.clientHeight - trackHeight) / 2);
     targetScrollTop = Math.max(0, Math.min(targetScrollTop, maxScroll));
-    console.log('[Y-Music-Tools Jump] trackHeight:', trackHeight, 'targetScrollTop:', targetScrollTop, 'currentScrollTop:', container.scrollTop, 'maxScroll:', maxScroll);
     container.scrollTop = targetScrollTop;
 
-    console.log('[Y-Music-Tools Jump] after scroll, scrollTop:', container.scrollTop, 'rows in DOM:', document.querySelectorAll('[class*="CommonTrack_root"]').length);
 
     waitForTrackElement(trackIndex, function (el) {
         match.element = el;
         doHighlight(el);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         reapplyHighlightRetry(trackIndex, 15);
-    });
+    }, 30, prevEl);
 
     return true;
 }
 
-function findTrackElementByIndex(dataIndex) {
+function findTrackElementByIndex(dataIndex, excludeEl) {
     var rows = document.querySelectorAll('[class*="CommonTrack_root"]');
     if (rows[dataIndex]) return rows[dataIndex];
     if (!rows.length) return null;
@@ -376,6 +424,7 @@ function findTrackElementByIndex(dataIndex) {
     }
 
     for (var i = 0; i < rows.length; i++) {
+        if (excludeEl && rows[i] === excludeEl) continue;
         var rowText = normalizeText(rows[i].textContent || '');
         if (rowText.indexOf(searchTitle) === -1) continue;
         if (searchArtists.length > 0) {
@@ -407,27 +456,33 @@ function estimateTrackHeight() {
     return row ? row.offsetHeight : 56;
 }
 
-function waitForTrackElement(index, callback, maxAttempts) {
-    if (maxAttempts === undefined) maxAttempts = 30;
+function waitForTrackElement(index, callback, maxAttempts, excludeEl) {
+    if (maxAttempts === undefined) maxAttempts = 40;
     var attempts = 0;
-    console.log('[Y-Music-Tools Jump] waitForTrackElement started for index:', index, 'maxAttempts:', maxAttempts);
     var timer = setInterval(function () {
-        var el = findTrackElementByIndex(index);
-        console.log('[Y-Music-Tools Jump] waitForTrackElement attempt', attempts + 1, '/', maxAttempts, 'el:', !!el);
+        var el = findTrackElementByIndex(index, excludeEl);
         if (el) {
             clearInterval(timer);
             callback(el);
             return;
         }
+        var container = findScrollContainer();
+        if (container) {
+            var trackHeight = estimateTrackHeight();
+            var maxScroll = container.scrollHeight - container.clientHeight;
+            var targetScrollTop = index * trackHeight - Math.floor((container.clientHeight - trackHeight) / 2);
+            targetScrollTop = Math.max(0, Math.min(targetScrollTop, maxScroll));
+            if (Math.abs(container.scrollTop - targetScrollTop) > trackHeight) {
+                container.scrollTop = targetScrollTop;
+            }
+        }
         if (++attempts >= maxAttempts) {
-            console.log('[Y-Music-Tools Jump] waitForTrackElement: max attempts reached for index:', index);
             clearInterval(timer);
         }
-    }, 100);
+    }, 120);
 }
 
 function doHighlight(el) {
-    console.log('[Y-Music-Tools Jump] doHighlight called, el:', el, 'highlight class:', JUMP_TRACK_HIGHLIGHT_CLASS);
     el.classList.remove(JUMP_TRACK_HIGHLIGHT_CLASS);
     void el.offsetWidth;
     el.classList.add(JUMP_TRACK_HIGHLIGHT_CLASS);
@@ -440,13 +495,11 @@ function reapplyHighlightRetry(trackIndex, maxAttempts) {
     var attempts = 0;
     var timer = setInterval(function () {
         attempts++;
-        var el = findTrackElementByIndex(trackIndex);
-        console.log('[Y-Music-Tools Jump] reapplyHighlightRetry attempt', attempts, '/', maxAttempts, 'trackIndex:', trackIndex, 'found:', !!el, 'hasHighlight:', el ? el.hasAttribute('data-ymt-highlight') : 'N/A');
+        var el = findTrackElementByIndex(trackIndex, prevEl);
         if (el && !el.hasAttribute('data-ymt-highlight')) {
             doHighlight(el);
         }
         if (!el || el.hasAttribute('data-ymt-highlight') || attempts >= maxAttempts) {
-            console.log('[Y-Music-Tools Jump] reapplyHighlightRetry stopping, reason:', !el ? 'no element' : el.hasAttribute('data-ymt-highlight') ? 'highlight present' : 'max attempts');
             clearInterval(timer);
         }
     }, 200);
@@ -471,13 +524,20 @@ function navigateNextMatch() {
     jumpToTrackByIndex(idx);
 }
 
+function isFullscreenPlayerOpen() {
+    return !!(_searchNav.arrowContainer && _searchNav.arrowContainer.hasAttribute('data-floating-ui-inert'));
+}
+
+function syncArrowBarVisibility() {
+    if (!_searchNav.arrowContainer) return;
+    var inert = _searchNav.arrowContainer.hasAttribute('data-floating-ui-inert');
+    _searchNav.arrowContainer.style.display = (!inert && _searchNav.matches.length > 0) ? 'flex' : 'none';
+}
+
 function updateNavDisplay() {
-    var show = _searchNav.matches.length > 0;
-    if (_searchNav.arrowContainer) {
-        _searchNav.arrowContainer.style.display = show ? 'flex' : 'none';
-    }
+    syncArrowBarVisibility();
     if (_searchNav.counterEl) {
-        if (show) updateCounterText();
+        if (_searchNav.matches.length > 0) updateCounterText();
     }
     populateResultsList();
 }
@@ -526,10 +586,6 @@ function populateResultsList() {
             row.appendChild(wrap);
 
             row.addEventListener('click', function () {
-                if (_searchNav.currentIndex !== matchIdx) {
-                    _searchNav.currentIndex = matchIdx;
-                    updateCounterText();
-                }
                 jumpToTrackByIndex(matchIdx);
             });
 
@@ -544,6 +600,9 @@ function cleanupSearchNav() {
     }
     if (_searchNav.observer) {
         _searchNav.observer.disconnect();
+    }
+    if (_searchNav.inertObserver) {
+        _searchNav.inertObserver.disconnect();
     }
     if (_searchNav.arrowContainer && _searchNav.arrowContainer.parentElement) {
         _searchNav.arrowContainer.remove();
@@ -566,7 +625,10 @@ function cleanupSearchNav() {
     _searchNav.counterEl = null;
     _searchNav.resultsList = null;
     _searchNav.observer = null;
+    _searchNav.inertObserver = null;
     _searchNav.survivalTimer = null;
     _searchNav.matches = [];
     _searchNav.currentIndex = -1;
 }
+
+console.log('[YMT] jump-to-track build: fullscreen-fix v2');

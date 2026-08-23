@@ -2,9 +2,9 @@
     "name": "__MSG_ext_name__",
     "short_name": "__MSG_ext_short_name__",
     "description": "__MSG_ext_description__",
-    "version": "1.0.2",
+    "version": "1.1.1",
     "manifest_version": 3,
-    "author": "Ekcler",
+    "author": "Ekclerchik",
     "default_locale": "ru",
     "host_permissions": [
         "https://api.music.yandex.ru/*",
@@ -87,7 +87,7 @@
     },
     "browser_specific_settings": {
         "gecko": {
-            "id": "y-music-tools@ekcler.github.io",
+            "id": "{a43d3ba9-d777-454a-875f-54d0bd63d080}",
             "strict_min_version": "142.0",
             "data_collection_permissions": {
                 "required": ["none"],
