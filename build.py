@@ -2,7 +2,7 @@ import zipfile
 import os
 import shutil
 
-BASE = r'C:\Users\Ekcle\Downloads\opencode-windows-x64\Y-Music-Tools'
+BASE = os.path.dirname(os.path.abspath(__file__))
 ZIP = os.path.join(BASE, 'Y-Music-Tools.zip')
 TEMP = r'C:\temp\yb_build'
 

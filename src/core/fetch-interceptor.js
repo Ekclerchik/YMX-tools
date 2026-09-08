@@ -107,6 +107,32 @@
                 }
             }
             if (!isWave && json.descriptionSeed && json.descriptionSeed.tag === WAVE_MARKER) isWave = true;
+
+            (function dbg() {
+                try {
+                    var seq = json.sequence || [];
+                    var desc = seq[0] ? (seq[0].track ? seq[0].track.title : '?') : '(no seq[0])';
+                    var desc2 = seq[1] ? (seq[1].track ? seq[1].track.title : '?') : '(no seq[1])';
+                    var seedTitle = '';
+                    var sd = json.descriptionSeed;
+                    if (sd && sd.seed && Array.isArray(sd.seed) && sd.seed[0] && sd.seed[0].track) {
+                        seedTitle = sd.seed[0].track.title || '';
+                    }
+                    var accepted = [];
+                    for (var a = 0; a < seeds.length; a++) {
+                        if (seeds[a] && seeds[a].track) accepted.push(seeds[a].track.title);
+                    }
+                    console.log('[YMX-wave] session/new', {
+                        isWave: isWave,
+                        sessionId: json.radioSessionId,
+                        seq0: desc,
+                        seq1: desc2,
+                        seedTitles: accepted.join(' | '),
+                        descSeedTitle: seedTitle,
+                    });
+                } catch (e) {}
+            })();
+
             return {
                 isWave: isWave,
                 sessionId: json.radioSessionId || null,
@@ -320,6 +346,55 @@
         return ids;
     }
 
+    function findSeedTrackId(json) {
+        try {
+            var sd = json && json.descriptionSeed;
+            if (!sd) return null;
+            if (sd.type === 'track') {
+                var v = sd.tag || sd.value;
+                if (v !== undefined && v !== null) return String(v);
+            }
+            if (sd.seed && Array.isArray(sd.seed) && sd.seed[0]) {
+                var t = sd.seed[0].track || sd.seed[0];
+                if (t && t.id !== undefined && t.id !== null) return String(t.id);
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function moveSeedTrackFirst(seq, seedId) {
+        if (!Array.isArray(seq) || !seedId) return false;
+        for (var i = 0; i < seq.length; i++) {
+            var it = seq[i] || {};
+            var t = it.track;
+            if (t && t.id !== undefined && t.id !== null && String(t.id) === seedId) {
+                if (i > 0) {
+                    var item = seq[i];
+                    seq.splice(i, 1);
+                    seq.unshift(item);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function fetchSeedTrack(seedId) {
+        return fetch(apiBase() + '/tracks/' + encodeURIComponent(seedId), { credentials: 'include' })
+            .then(function (r) {
+                if (!r.ok) throw new Error('tracks http ' + r.status);
+                return r.json();
+            })
+            .then(function (json) {
+                var arr = json && json.result;
+                if (!Array.isArray(arr) || !arr[0]) return null;
+                return arr[0];
+            })
+            .catch(function () {
+                return null;
+            });
+    }
+
     function filterWaveResponse(text, tag) {
         var likeEnabled = waveFilterEnabled();
         var skipEnabled = antiSkipEnabled();
@@ -353,7 +428,28 @@
             keep.push(item);
         }
         if (keep.length === 0) keep = seq.slice(0, 1);
-        if (keep.length === seq.length) return null;
+        var keptSeed = false;
+        if (tag === 'first') {
+            var seedId = findSeedTrackId(json);
+            if (seedId) keptSeed = moveSeedTrackFirst(keep, seedId);
+        }
+        if (tag === 'first' && !keptSeed) {
+            var seedId2 = findSeedTrackId(json);
+            if (seedId2) {
+                return fetchSeedTrack(seedId2).then(function (track) {
+                    if (track && track.id !== undefined) {
+                        var head = { type: 'track', liked: false, track: track };
+                        if (!(keep[0] && String(keep[0].track && keep[0].track.id) === String(track.id))) {
+                            keep.unshift(head);
+                            console.log('[YMX-wave] seed-first prepended: ' + (track.title || track.id));
+                        }
+                    }
+                    json.sequence = keep;
+                    return JSON.stringify(json);
+                });
+            }
+        }
+        if (keep.length === seq.length && !keptSeed) return null;
         json.sequence = keep;
         return JSON.stringify(json);
     }
@@ -433,6 +529,36 @@
         }
 
         if (isSessionNew) {
+            try {
+                var _reqBody = null;
+                if (typeof init !== 'undefined' && init && init.body) {
+                    if (typeof init.body === 'string') _reqBody = init.body;
+                    else if (init.body instanceof URLSearchParams) _reqBody = init.body.toString();
+                    else if (init.body instanceof Blob) _reqBody = '[blob]';
+                    else _reqBody = '[other:' + (init.body.constructor ? init.body.constructor.name : typeof init.body) + ']';
+                }
+                var _inputInfo = '';
+                if (typeof input === 'string') _inputInfo = 'string:' + input.slice(0, 200);
+                else if (input && input.constructor) {
+                    _inputInfo += '|callUrl=' + (input.url || '');
+                    _inputInfo = input.constructor.name;
+                    if (input instanceof Request) {
+                        try {
+                            _inputInfo += '|method=' + input.method;
+                            if (input.body && input.body.getReader) {
+                                var _rdr = input.body.getReader();
+                                _rdr.read().then(function (_r2) {
+                                    var _txt = _r2 && _r2.value ? new TextDecoder().decode(_r2.value) : '';
+                                    console.log('[YMX-wave-req] session/new REQUEST BODY:', _txt.slice(0, 1000));
+                                }).catch(function () {});
+                            }
+                        } catch (e) { _inputInfo += '|err=' + e.message; }
+                    }
+                }
+                console.log('[YMX-wave-req] session/new URL:', urlStr, '| body:', _reqBody, '| input:', _inputInfo);
+            } catch (e) {
+                console.log('[YMX-wave-req] session/new URL err:', urlStr);
+            }
             return origFetch.apply(this, arguments).then(function (response) {
                 if (!response || !response.ok) return response;
                 return response.clone().text().then(function (text) {
@@ -445,9 +571,10 @@
                     }
                     if (!waveFilterEnabled()) return response;
                     return ensureLikedSet().then(function () {
-                        var out = filterWaveResponse(text, 'first');
-                        if (!out) return response;
-                        return rebuildResponse(response, out);
+                        return Promise.resolve(filterWaveResponse(text, 'first')).then(function (out) {
+                            if (!out) return response;
+                            return rebuildResponse(response, out);
+                        });
                     });
                 }).catch(function () {
                     return response;
