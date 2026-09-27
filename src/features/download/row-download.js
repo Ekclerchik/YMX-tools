@@ -6,7 +6,7 @@ function ensureRowDownloadStyle() {
     var s = document.createElement('style');
     s.id = ROW_DOWNLOAD_STYLE_ID;
     s.textContent = [
-        '.ymt-row-download { width: 32px; height: 32px; min-width: 32px; border-radius: 50%; border: 1px solid transparent; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; line-height: 1; padding: 0; margin-right: 4px; opacity: 0; transition: opacity 0.15s, color 0.15s, border-color 0.15s; }',
+        '.ymt-row-download { width: 32px; height: 32px; min-width: 32px; border-radius: 50%; border: 1px solid transparent; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; line-height: 1; padding: 0; margin-right: 4px; opacity: 0; transition: opacity 0.15s, color 0.15s, border-color 0.15s; position: relative; z-index: 6; pointer-events: auto; }',
         '[class*="CommonTrack_root"]:hover .ymt-row-download { opacity: 1; }',
         '.ymt-row-download:hover { border-color: rgba(255,255,255,0.3); color: #fff; }',
         '.ymt-row-download.busy, .ymt-row-download.done, .ymt-row-download.error { opacity: 1; }',
@@ -30,6 +30,14 @@ function stopRowDownloadInjection() {
     }
 }
 
+function setRowDownloadGlyph(btn) {
+    btn.innerHTML = '';
+    var img = document.createElement('img');
+    img.src = UP_ARROW_IMG;
+    img.style.cssText = 'width:16px;height:16px;pointer-events:none;display:block;transform:rotate(180deg);';
+    btn.appendChild(img);
+}
+
 function injectRowDownloadButtons() {
     var rows = document.querySelectorAll('[class*="CommonTrack_root"]');
     for (var i = 0; i < rows.length; i++) {
@@ -46,7 +54,7 @@ function injectRowDownloadButtons() {
         btn.className = 'ymt-row-download';
         btn.dataset.trackId = id;
         btn.title = '\u0421\u043a\u0430\u0447\u0430\u0442\u044c';
-        btn.textContent = '\u2193';
+        setRowDownloadGlyph(btn);
         btn.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -83,6 +91,6 @@ function handleRowDownloadClick(btn) {
 
 function resetRowDownloadButton(btn) {
     btn.classList.remove('busy', 'done', 'error');
-    btn.textContent = '\u2193';
+    setRowDownloadGlyph(btn);
     btn.title = '\u0421\u043a\u0430\u0447\u0430\u0442\u044c';
 }

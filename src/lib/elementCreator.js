@@ -1,5 +1,12 @@
 const RIGHT_ARROW_IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAYAAAAeP4ixAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAuUlEQVR4nO3XTQrCMBCG4bmExdz/KkJBXdlFj/NKoSgWhWr+ZvB7VyEhkIesxkwppZRSSilVIGAATsBlWVvEgANw49kMJAv4E9MKmDbrIeJPzMDxzV4Kh7DPZykcIgyGHQj3GL5AuMXwA8IdhgyEGwwFEN0xFER0w1AB0RxDRUQzDA0Q1TE0RFTD9EAUx/REFMN4QGRjPCGyMOt87W6a43XqPO+5MAJXT4gNZnnb+NhUSimllFLq77oDYPHP2YLmYzwAAAAASUVORK5CYII=';
 
+function _openSubmenu(li) {
+    document.querySelectorAll('.ymt_menu_has_children').forEach(function (el) {
+        if (el !== li) el.classList.remove('ymt_submenu_open');
+    });
+    li.classList.add('ymt_submenu_open');
+}
+
 function createToggleSwitch(checked) {
     var btn = document.createElement('button');
     btn.type = 'button';
@@ -61,7 +68,7 @@ function createDropdown(data) {
 
     let style = document.createElement('style');
     style.textContent = [
-        '.ymt_dropdown > ::-webkit-scrollbar { width: 0px; }',
+        '.ymt_dropdown > ::-webkit-scrollbar, .ymt_dropdown-content::-webkit-scrollbar { width: 0px; }',
         '.ymt_dropdown > ::-moz-scrollbar { width: 0px; }',
         '.ymt_menu_width { width: ' + data.width + 'px; }',
         '.ymt_dropbtn { border: none; cursor: pointer; background: transparent; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s; }',
@@ -69,17 +76,23 @@ function createDropdown(data) {
         '.ymt_dropbtn .ymt_btn_label { font-size: 14px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; color: #fff; }',
         '.ymt_dropdown-buttons { display: inline-flex; align-items: center; }',
         '.ymt_dropdown { text-align: left; position: relative; display: inline-block; z-index: 77; }',
-        '.ymt_dropdown-content { display: none; position: absolute; top: calc(100% + 14px); min-width: 160px; background: #282828; border-radius: 12px; padding: 6px 0; box-shadow: 0 10px 20px -5px rgba(0, 0, 0, .4); z-index: 78; }',
-        '.ymt_dropdown-content li { padding: 10px 16px; text-decoration: none; display: block; color: #fff; cursor: pointer; font-size: 14px; border-radius: 8px; margin: 0 6px; }',
-        '.ymt_dropdown-content li:hover { background-color: rgba(255, 255, 255, 0.1); }',
+        '.ymt_dropdown-content { display: none; position: absolute; top: calc(100% + 12px); min-width: 260px; background: rgba(28,28,28,0.94); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 6px; box-shadow: 0 16px 40px -12px rgba(0,0,0,.65); z-index: 78; }',
+        '.ymt_dropdown-content li { padding: 10px 14px; text-decoration: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: rgba(255,255,255,.92); cursor: pointer; font-size: 14px; font-weight: 500; border-radius: 10px; margin: 2px 0; transition: background-color .15s ease; }',
+        '.ymt_dropdown-content li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
+        '.ymt_dropdown-content li:hover { background-color: rgba(255,255,255,0.08); }',
+        '.ymt_dropdown-content li.ymt_sep { padding: 0; margin: 7px 8px; height: 1px; background: rgba(255,255,255,0.08); border-radius: 0; cursor: default; }',
+        '.ymt_dropdown-content li.ymt_sep:hover { background: rgba(255,255,255,0.08); }',
         '.ymt_show { display: block; }',
         '.ymt_header { border-bottom-width: 1px; border-bottom-style: solid; border-color: #e5e5e545; }',
         '.ymt_menu_has_children { position: relative; }',
-        '.ymt_menu_has_children:hover > .ymt_submenu { display: block; }',
-        '.ymt_submenu_open { display: block !important; }',
-        '.ymt_submenu { display: none; position: absolute; left: calc(100% + 4px); top: -6px; min-width: 140px; background: #282828; border-radius: 10px; padding: 4px 0; box-shadow: 0 8px 16px -4px rgba(0,0,0,.5); z-index: 79; }',
-        '.ymt_submenu li { padding: 8px 14px; font-size: 13px; color: #fff; cursor: pointer; border-radius: 6px; margin: 0 4px; white-space: nowrap; }',
-        '.ymt_submenu li:hover { background: rgba(255,255,255,0.1); }',
+        '.ymt_menu_has_children > span { pointer-events: none; }',
+        '.ymt_menu_has_children:hover > .ymt_submenu, .ymt_menu_has_children.ymt_submenu_open > .ymt_submenu { display: block; animation: ymt_submenu_in .15s ease; }',
+        '@keyframes ymt_submenu_in { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: translateX(0); } }',
+        '.ymt_submenu { display: none; position: absolute; left: calc(100% + 6px); top: -8px; min-width: 220px; background: rgba(28,28,28,0.96); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 6px; box-shadow: 0 16px 40px -12px rgba(0,0,0,.65); z-index: 79; }',
+        '.ymt_submenu li { padding: 9px 12px; font-size: 13px; color: rgba(255,255,255,.92); cursor: pointer; border-radius: 8px; margin: 2px 0; font-weight: 500; transition: background-color .15s ease; }',
+        '.ymt_submenu li:hover { background: rgba(255,255,255,0.08); }',
+        '.ymt_submenu li.ymt_sep { padding: 0; margin: 7px 8px; height: 1px; background: rgba(255,255,255,0.08); border-radius: 0; cursor: default; }',
+        '.ymt_submenu li.ymt_sep:hover { background: rgba(255,255,255,0.08); }',
     ].join(' ');
 
     let root = document.createElement('span');
@@ -124,18 +137,25 @@ function createMenu(data) {
 
     for (let i = 0; i < data.items.length; i++) {
         let item = data.items[i];
+        if (item && item.divider) {
+            let sep = document.createElement('li');
+            sep.className = 'ymt_sep';
+            ul.append(sep);
+            continue;
+        }
         let li = document.createElement('li');
 
         if (item.hasOwnProperty('children')) {
             li.className = 'ymt_menu_has_children';
-            li.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+            li.style.cssText = 'display:flex;align-items:center;position:relative;';
             let titleText = typeof item.title === 'function' ? item.title() : item.title;
             var titleSpan = document.createElement('span');
             titleSpan.textContent = titleText;
+            titleSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:18px;pointer-events:none;';
             li.appendChild(titleSpan);
             var arrowImg = document.createElement('img');
             arrowImg.src = RIGHT_ARROW_IMG;
-            arrowImg.style.cssText = 'width:12px;height:12px;object-fit:contain;transform:rotate(90deg);opacity:0.6;flex-shrink:0;';
+            arrowImg.style.cssText = 'width:12px;height:12px;display:block;object-fit:contain;transform:rotate(90deg);opacity:0.6;position:absolute;right:10px;top:50%;margin-top:-6px;pointer-events:none;';
             li.appendChild(arrowImg);
             let subUl = document.createElement('ul');
             subUl.className = 'ymt_submenu';
@@ -144,15 +164,10 @@ function createMenu(data) {
                 let subLi = document.createElement('li');
                 if (subItem.hasOwnProperty('titleId')) subLi.setAttribute('data-title-id', subItem.titleId);
                 if (subItem.toggle) {
-                    subLi.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
                     let labelSpan = document.createElement('span');
                     labelSpan.textContent = typeof subItem.title === 'function' ? subItem.title() : subItem.title;
                     subLi.appendChild(labelSpan);
-                    let check = document.createElement('span');
-                    check.className = 'ymt-check';
-                    check.textContent = subItem.defaultState ? '\u2713' : '';
-                    check.style.cssText = 'font-size:13px;font-weight:700;color:#ffff00;flex-shrink:0;';
-                    subLi.appendChild(check);
+                    subLi.appendChild(createToggleSwitch(subItem.defaultState !== undefined ? subItem.defaultState : false));
                 } else {
                     subLi.textContent = typeof subItem.title === 'function' ? subItem.title() : subItem.title;
                 }
@@ -160,14 +175,11 @@ function createMenu(data) {
                 subUl.append(subLi);
             }
             li.append(subUl);
+            li.addEventListener('mouseenter', function () { _openSubmenu(li); });
             li.addEventListener('click', function (e) {
                 if (e.target.closest('.ymt_submenu')) return;
                 e.stopPropagation();
-                var wasOpen = li.classList.contains('ymt_submenu_open');
-                document.querySelectorAll('.ymt_submenu_open').forEach(function (el) {
-                    el.classList.remove('ymt_submenu_open');
-                });
-                if (!wasOpen) li.classList.add('ymt_submenu_open');
+                _openSubmenu(li);
             });
         } else {
             if (item.hasOwnProperty('header')) {

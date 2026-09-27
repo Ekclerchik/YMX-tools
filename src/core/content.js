@@ -63,6 +63,9 @@ let _savedOrigPush = null;
 let _savedOrigReplace = null;
 
 injectSwalDarkTheme();
+injectAlbumCoverTweak();
+injectVibeResetButtonHide();
+injectVibeWordsHide();
 initUrlObserver();
 fillContent('complete');
 
@@ -85,6 +88,47 @@ setInterval(function () {
         }
     }
 }, 700);
+
+setInterval(function () {
+    if (isVibeSwapTargetPresent()) {
+        swapVibeArtistAndTitle();
+    }
+}, 250);
+
+function isVibeSwapTargetPresent() {
+    return !!document.querySelector('[class*="VibePlayerbarMeta_trackName"]');
+}
+
+var _ymtVibeObserver = null;
+
+function bumpVibeSwap() {
+    if (document.querySelector('[class*="VibePage_root"]') && isVibeSwapTargetPresent()) {
+        swapVibeArtistAndTitle();
+    }
+}
+
+function startVibeSwapWatcher() {
+    if (_ymtVibeObserver) return;
+    _ymtVibeObserver = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+            var n = mutations[i].target;
+            var depth = 0;
+            while (n && n !== document.body && depth < 6) {
+                if (typeof n.className === 'string' &&
+                    (n.className.indexOf('VibeDynamicArtists') !== -1 ||
+                     n.className.indexOf('VibePlayerbarMeta') !== -1)) {
+                    swapVibeArtistAndTitle();
+                    return;
+                }
+                n = n.parentNode;
+                depth++;
+            }
+        }
+    });
+    _ymtVibeObserver.observe(document.body, { subtree: true, childList: true, characterData: true });
+}
+
+setTimeout(startVibeSwapWatcher, 1500);
 
 function injectSwalDarkTheme() {
     if (document.getElementById('ymt-swal-dark')) return;
@@ -114,6 +158,83 @@ function injectSwalDarkTheme() {
         '.swal2-icon.swal2-error { border-color: rgba(255,255,255,0.2) !important; }',
     ].join('\n');
     document.head.appendChild(s);
+}
+
+function injectAlbumCoverTweak() {
+    if (document.getElementById('ymt-album-cover-tweak')) return;
+    var s = document.createElement('style');
+    s.id = 'ymt-album-cover-tweak';
+    s.textContent = [
+        '[class*="AlbumCover_link"] { width: 256px !important; height: 256px !important; min-width: 256px !important; min-height: 256px !important; max-width: none !important; max-height: none !important; flex-shrink: 0; display: inline-block !important; }',
+        '[class*="AlbumCover_cover"] { width: 256px !important; height: 256px !important; object-fit: cover !important; }',
+    ].join('\n');
+    document.head.appendChild(s);
+}
+
+function injectVibeResetButtonHide() {
+    if (document.getElementById('ymt-vibe-reset-hide')) return;
+    var s = document.createElement('style');
+    s.id = 'ymt-vibe-reset-hide';
+    s.textContent = '[class*="VibeResetButton_container"]{display:none!important;}';
+    document.head.appendChild(s);
+}
+
+function injectVibeWordsHide() {
+    if (document.getElementById('ymt-vibe-words-hide')) return;
+    var s = document.createElement('style');
+    s.id = 'ymt-vibe-words-hide';
+    s.textContent = '[class*="VibePage_words"]{display:none!important;}[class*="WordsCard_root"]{display:none!important;}';
+    document.head.appendChild(s);
+}
+
+function swapVibeArtistAndTitle() {
+    var artistRoots = document.querySelectorAll('[class*="VibeDynamicArtists_root"]');
+    var artistRoot = null;
+    for (var r = 0; r < artistRoots.length; r++) {
+        if (artistRoots[r].hasAttribute('style') && artistRoots[r].getAttribute('style').indexOf('--dynamic-font-size') !== -1) {
+            artistRoot = artistRoots[r];
+            break;
+        }
+    }
+    if (!artistRoot) artistRoot = document.querySelector('[class*="VibeDynamicArtists_root"]');
+    if (!artistRoot) return;
+
+    var playerBar = document.querySelector('[class*="VibePlayerBar_root"]');
+    var trackNameBlock = playerBar
+        ? playerBar.querySelector('[class*="VibePlayerbarMeta_trackName"]')
+        : document.querySelector('[class*="VibePlayerbarMeta_trackName"]');
+    if (!trackNameBlock) return;
+
+    var bigEl = artistRoot.querySelector('[class*="SeparatedArtists"]');
+    if (!bigEl) return;
+
+    var artistName = '';
+    var sepTitle = bigEl.getAttribute('title');
+    if (sepTitle && sepTitle.trim()) {
+        artistName = sepTitle;
+    } else {
+        var link = bigEl.querySelector('a[href*="/artist/"]');
+        if (link) {
+            var ariaLabel = link.getAttribute('aria-label') || '';
+            artistName = ariaLabel.indexOf('\u0410\u0440\u0442\u0438\u0441\u0442 ') === 0 ? ariaLabel.slice(7).trim() : link.textContent.trim();
+        } else {
+            artistName = bigEl.textContent.trim();
+        }
+    }
+    if (!artistName) return;
+
+    var trackDivs = trackNameBlock.querySelectorAll('[class*="VibePlayerbarMeta_trackNameText"]');
+    if (!trackDivs.length) return;
+    var stableTrackDiv = trackDivs[0];
+    var trackName = stableTrackDiv.textContent.trim();
+    if (!trackName || artistName === trackName) return;
+
+    if (bigEl.textContent.trim() === trackName) return;
+
+    bigEl.textContent = trackName;
+    for (var i = 1; i < trackDivs.length; i++) {
+        trackDivs[i].textContent = artistName;
+    }
 }
 
 function initUrlObserver() {
@@ -215,16 +336,9 @@ var _trackDateTimerId = null;
 
 function startTrackDateInjection() {
     stopTrackDateInjection();
-    var tryCount = 0;
     _trackDateTimerId = setInterval(function () {
-        if (injectTrackDates()) {
-            stopTrackDateInjection();
-            return;
-        }
-        if (++tryCount > 30) {
-            stopTrackDateInjection();
-        }
-    }, 500);
+        injectTrackDates();
+    }, 250);
 }
 
 function stopTrackDateInjection() {
@@ -248,36 +362,44 @@ function injectTrackDates() {
     var data = readInterceptedData();
     if (!data || !data.tracks || data.tracks.length === 0) return false;
 
+    var byId = {};
+    for (var i = 0; i < data.tracks.length; i++) {
+        byId[String(data.tracks[i].id)] = data.tracks[i];
+    }
+
     var injected = 0;
     var trackRows = document.querySelectorAll('[class*="CommonTrack_root"], [class*="d-track"], [class*="TrackList"] > div > div, [class*="playlist__tracks"] > div');
     if (trackRows.length === 0) return false;
 
-    for (var i = 0; i < Math.min(trackRows.length, data.tracks.length); i++) {
+    for (var i = 0; i < trackRows.length; i++) {
         var row = trackRows[i];
-        var track = data.tracks[i];
+        var likeBtn = row.querySelector('button[aria-label="\u041d\u0440\u0430\u0432\u0438\u0442\u0441\u044f"], [class*="Like"], [class*="like"], [class*="Heart"], [class*="heart"]');
+        if (!likeBtn || !likeBtn.parentElement) continue;
+
+        var dateEl = row.querySelector('.ymt-release-date');
+        if (dateEl && dateEl.parentElement) {
+            dateEl.parentElement.removeChild(dateEl);
+        }
+
+        var id = extractTrackIdFromElement(row);
+        if (!id || !byId[String(id)]) continue;
+        var track = byId[String(id)];
 
         var dateText = (track.releaseDate || '').split('T')[0];
-if (!dateText && track.trackAddedAt) {
-    var ts = track.trackAddedAt;
-    if (typeof ts === 'string') dateText = ts.split('T')[0];
-    else if (typeof ts === 'number') dateText = formatAddedDate(ts);
-}
-        if (!dateText) continue;
-        if (row.querySelector('.ymt-release-date')) { injected++; continue; }
-
-        var likeBtn = row.querySelector('button[aria-label="\u041d\u0440\u0430\u0432\u0438\u0442\u0441\u044f"], [class*="Like"], [class*="like"], [class*="Heart"], [class*="heart"]');
-        if (!likeBtn) continue;
-
-        var dateEl = document.createElement('span');
-        dateEl.className = 'ymt-release-date';
-        dateEl.textContent = dateText;
-        dateEl.style.cssText = 'font-size:14px; color:rgba(255,255,255,0.5); white-space:nowrap; margin-right:8px;';
-
-        var actionsContainer = likeBtn.parentElement;
-        if (actionsContainer) {
-            actionsContainer.insertBefore(dateEl, likeBtn);
-            injected++;
+        if (!dateText && track.trackAddedAt) {
+            var ts = track.trackAddedAt;
+            if (typeof ts === 'string') dateText = ts.split('T')[0];
+            else if (typeof ts === 'number') dateText = formatAddedDate(ts);
         }
+        if (!dateText) continue;
+
+        dateEl = document.createElement('span');
+        dateEl.className = 'ymt-release-date';
+        dateEl.setAttribute('data-track-id', id);
+        dateEl.textContent = dateText;
+        dateEl.style.cssText = 'display:inline-flex;align-items:center;width:78px;flex-shrink:0;font-size:13px;color:rgba(255,255,255,0.5);white-space:nowrap;pointer-events:none;';
+        likeBtn.parentElement.insertBefore(dateEl, likeBtn);
+        injected++;
     }
 
     return injected > 0;

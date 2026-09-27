@@ -78,12 +78,18 @@ function buildMenuPlaylist() {
             },
             IMPORT_MENU_ITEM,
             {
+                divider: true,
+            },
+            {
                 title: '\u0421\u043a\u0430\u0447\u0430\u0442\u044c',
                 children: [
                     DOWNLOAD_CURRENT_MENU_ITEM,
                     DOWNLOAD_PLAYLIST_MENU_ITEM,
                     DOWNLOAD_SEARCH_MENU_ITEM,
                 ],
+            },
+            {
+                divider: true,
             },
             {
                 title: '\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043a \u0442\u0440\u0435\u043a\u0443',
@@ -112,6 +118,9 @@ function buildMenuPlaylist() {
                 toggle: true,
                 defaultState: isAntiSkipEnabled(),
                 handler: onClickAntiSkipToggle,
+            },
+            {
+                divider: true,
             },
             {
                 title: '\u0421\u043a\u0440\u044b\u0442\u044c',
