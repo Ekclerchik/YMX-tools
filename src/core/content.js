@@ -4,6 +4,53 @@ var DATE_CURRENT_STATE = true;
 var WAVE_FILTER_KEY = 'ymtWaveFilterLiked';
 var ANTISKIP_KEY = 'ymtAntiSkip';
 
+var TELEMETRY_CURRENT_STATE = true;
+
+function getExtensionApi() {
+    try {
+        if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.sendMessage) {
+            return browser;
+        }
+    } catch (e) {}
+    return null;
+}
+
+function isTelemetryBlocked() {
+    return TELEMETRY_CURRENT_STATE;
+}
+
+function setTelemetryBlocked(val) {
+    TELEMETRY_CURRENT_STATE = !!val;
+    try {
+        setMenuItemToggle('ymt-telemetry-title', TELEMETRY_CURRENT_STATE);
+    } catch (e) {}
+    var api = getExtensionApi();
+    if (!api) return;
+    try {
+        var pending = api.runtime.sendMessage({ action: 'telemetry', enabled: TELEMETRY_CURRENT_STATE });
+        if (pending && pending.catch) pending.catch(function () {});
+    } catch (e) {}
+}
+
+function onClickTelemetryToggle() {
+    setTelemetryBlocked(!TELEMETRY_CURRENT_STATE);
+}
+
+function syncTelemetryState() {
+    var api = getExtensionApi();
+    if (!api) return;
+    try {
+        var pending = api.runtime.sendMessage({ action: 'telemetryState' });
+        if (!pending || !pending.then) return;
+        pending.then(function (res) {
+            if (!res || typeof res.enabled !== 'boolean') return;
+            if (res.enabled === TELEMETRY_CURRENT_STATE) return;
+            TELEMETRY_CURRENT_STATE = res.enabled;
+            setMenuItemToggle('ymt-telemetry-title', TELEMETRY_CURRENT_STATE);
+        }).catch(function () {});
+    } catch (e) {}
+}
+
 function isWaveFilterEnabled() {
     return localStorage.getItem(WAVE_FILTER_KEY) !== 'false';
 }
@@ -67,6 +114,7 @@ injectAlbumCoverTweak();
 injectVibeResetButtonHide();
 injectVibeWordsHide();
 initUrlObserver();
+syncTelemetryState();
 fillContent('complete');
 
 var _lastPlaylistMeta = null;

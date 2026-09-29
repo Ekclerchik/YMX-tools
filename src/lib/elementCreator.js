@@ -76,6 +76,8 @@ function createDropdown(data) {
         '.ymt_dropbtn .ymt_btn_label { font-size: 14px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; color: #fff; }',
         '.ymt_dropdown-buttons { display: inline-flex; align-items: center; }',
         '.ymt_dropdown { text-align: left; position: relative; display: inline-block; z-index: 77; }',
+        'button:has(> #menuPlaylistYMusicTools) { position: relative !important; }',
+        '#menuPlaylistYMusicTools { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); z-index: 77; }',
         '.ymt_dropdown-content { display: none; position: absolute; top: calc(100% + 12px); min-width: 260px; background: rgba(28,28,28,0.94); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 6px; box-shadow: 0 16px 40px -12px rgba(0,0,0,.65); z-index: 78; }',
         '.ymt_dropdown-content li { padding: 10px 14px; text-decoration: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: rgba(255,255,255,.92); cursor: pointer; font-size: 14px; font-weight: 500; border-radius: 10px; margin: 2px 0; transition: background-color .15s ease; }',
         '.ymt_dropdown-content li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
