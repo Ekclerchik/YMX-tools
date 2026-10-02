@@ -20,6 +20,17 @@ def zip_dir(src_dir, zip_path, arc_prefix):
             zf.write(full, arc)
     zf.close()
 
+def write_zip(src_dir, zip_path, arc_prefix):
+    # Собираем во временный файл: запуск zipfile прямо на существующем архиве
+    # падает с OSError [Errno 22], если файл удерживает другой процесс
+    # (about:debugging, архиватор, синхронизация) — он не даёт открыть его на
+    # усечение, хотя на чтение и дописывание файл открывается свободно.
+    tmp_path = zip_path + '.tmp'
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
+    zip_dir(src_dir, tmp_path, arc_prefix)
+    os.replace(tmp_path, zip_path)
+
 def build_firefox():
     print('[+] Building Firefox extension...')
     src = os.path.join(TEMP, 'firefox')
@@ -28,7 +39,7 @@ def build_firefox():
     shutil.copytree(os.path.join(BASE, '_locales'), os.path.join(src, '_locales'), dirs_exist_ok=True)
     shutil.copytree(os.path.join(BASE, 'icon'), os.path.join(src, 'icon'), dirs_exist_ok=True, ignore=shutil.ignore_patterns('Image*.png'))
     shutil.copytree(os.path.join(BASE, 'src'), os.path.join(src, 'src'), dirs_exist_ok=True)
-    zip_dir(src, ZIP, '')
+    write_zip(src, ZIP, '')
     print('[+] Firefox: {} ({} bytes)'.format(ZIP, os.path.getsize(ZIP)))
 
 def main():

@@ -331,6 +331,88 @@ var EXPORT_CSV_MENU_ITEM = {
     handler: onClickExportCsv,
 };
 
+var EXPORT_JSON_MENU_ITEM = {
+    title: 'Скопировать .json',
+    handler: onClickExportJson,
+};
+
+var COPY_LINKS_MENU_ITEM = {
+    title: 'Копировать ссылки на треки',
+    handler: onClickCopyLinks,
+};
+
+function getTrackPageUrl(id) {
+    return 'https://' + location.hostname + '/track/' + id;
+}
+
+function onClickCopyLinks() {
+    toggleDropdown('menuPlaylistMain');
+
+    ensurePlaylistData(function (data) {
+        if (!data || data.tracks.length === 0) {
+            fireErrorSwal('Данные плейлиста не загружены. Обновите страницу.');
+            return;
+        }
+
+        var links = [];
+        var skipped = 0;
+        for (var i = 0; i < data.tracks.length; i++) {
+            var t = data.tracks[i];
+            if (!t.id) { skipped++; continue; }
+            links.push(getTrackPageUrl(t.id));
+        }
+
+        if (links.length === 0) {
+            fireErrorSwal('У треков нет ссылок: обновите страницу.');
+            return;
+        }
+
+        copyLinesToClipboard(links).then(function () {
+            fireInfoSwal('Скопировано ' + links.length + ' ссылок'
+                + (skipped ? ' (пропущено ' + skipped + ')' : ''));
+        }, function (e) {
+            console.error(e);
+            fireErrorSwal('Ошибка при копировании');
+        });
+    });
+}
+
+function onClickExportJson() {
+    toggleDropdown('menuPlaylistMain');
+
+    ensurePlaylistData(function (data) {
+        if (!data || data.tracks.length === 0) {
+            fireErrorSwal('Данные плейлиста не загружены. Обновите страницу.');
+            return;
+        }
+
+        var tracks = [];
+        for (var i = 0; i < data.tracks.length; i++) {
+            var t = data.tracks[i];
+            tracks.push({
+                id: t.id || '',
+                title: t.title || '',
+                artists: t.artists || [],
+                durationMs: t.durationMs || 0,
+                releaseDate: (t.releaseDate || '').split('T')[0] || '',
+                trackAddedAt: t.trackAddedAt || 0,
+                url: t.id ? getTrackPageUrl(t.id) : '',
+            });
+        }
+
+        var payload = {
+            title: data.title || '',
+            exportedAt: new Date().toISOString(),
+            count: tracks.length,
+            tracks: tracks,
+        };
+
+        var fileName = sanitizeFileName(data.title) + '.json';
+        downloadBlob(JSON.stringify(payload, null, 2), fileName, 'application/json;charset=utf-8');
+        fireInfoSwal('Скачано ' + tracks.length + ' треков');
+    });
+}
+
 function onClickCopyTracks() {
     toggleDropdown('menuPlaylistMain');
 
@@ -353,11 +435,44 @@ function copyTracksToClipboard(source) {
     var lines = [];
     for (var i = 0; i < source.length; i++) {
         var t = source[i];
+        if (typeof t === 'string') {
+            lines.push(t);
+            continue;
+        }
         var artist = t.artists ? t.artists.join(', ') : '';
         var line = artist ? (artist + ' - ' + t.title) : t.title;
-        lines.push(line);
+        lines.push(line == null ? '' : line);
     }
-    return navigator.clipboard.writeText(lines.join('\n'));
+    return copyLinesToClipboard(lines);
+}
+
+function copyLinesToClipboard(lines) {
+    var text = lines.filter(function (l) { return l != null && l !== ''; }).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).catch(function () {
+            return legacyCopyToClipboard(text);
+        });
+    }
+    return Promise.resolve(legacyCopyToClipboard(text));
+}
+
+function legacyCopyToClipboard(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:none;outline:none;box-shadow:none;background:transparent;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    var ok = false;
+    try {
+        ok = document.execCommand('copy');
+    } catch (e) {
+        ok = false;
+    }
+    ta.remove();
+    if (!ok) throw new Error('Не удалось скопировать в буфер обмена');
+    return true;
 }
 
 function onClickStats() {

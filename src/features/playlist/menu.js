@@ -69,11 +69,13 @@ function buildMenuPlaylist() {
         items: [
             STATS_MENU_ITEM,
             EXPORTER_MENU_ITEM,
+            COPY_LINKS_MENU_ITEM,
             {
-                title: '\u0421\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c',
+                title: 'Скопировать',
                 children: [
                     EXPORT_TXT_MENU_ITEM,
                     EXPORT_CSV_MENU_ITEM,
+                    EXPORT_JSON_MENU_ITEM,
                 ],
             },
             IMPORT_MENU_ITEM,
@@ -82,11 +84,11 @@ function buildMenuPlaylist() {
             },
             {
                 title: '\u0421\u043a\u0430\u0447\u0430\u0442\u044c',
-                children: [
+                children: getBitrateMenuItems().concat([
                     DOWNLOAD_CURRENT_MENU_ITEM,
                     DOWNLOAD_PLAYLIST_MENU_ITEM,
                     DOWNLOAD_SEARCH_MENU_ITEM,
-                ],
+                ]),
             },
             {
                 divider: true,
@@ -115,14 +117,14 @@ function buildMenuPlaylist() {
                         defaultState: isWaveFilterEnabled(),
                         handler: onClickWaveFilterToggle,
                     },
-                    {
-                        title: '\u041d\u0435 \u043f\u043e\u0432\u0442\u043e\u0440\u044f\u0442\u044c \u043d\u0435\u0434\u0430\u0432\u043d\u0438\u0435 \u0442\u0440\u0435\u043a\u0438',
+{
+                        title: 'Не повторять недавние треки',
                         titleId: 'ymt-anti-skip-title',
                         toggle: true,
                         defaultState: isAntiSkipEnabled(),
                         handler: onClickAntiSkipToggle,
                     },
-                ],
+                ].concat(getStreamQualityMenuItems(), getAntiSkipHoursMenuItems(), getWaveStatsMenuItems()),
             },
             {
                 title: '\u041f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0441\u0442\u044c',

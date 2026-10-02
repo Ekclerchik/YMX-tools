@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>YMX Tools</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<div class="wrap" id="wrap">
+    <div class="head">
+        <span class="logo">YMX Tools</span>
+    </div>
+
+    <div class="block" id="track-block">
+        <div class="track">
+            <div class="cover" id="track-cover"></div>
+            <div class="meta">
+                <div class="t-title" id="track-title">Сейчас ничего не играет</div>
+                <div class="t-artist" id="track-artist">Включите трек на странице</div>
+            </div>
+        </div>
+        <button class="btn" id="btn-current" disabled>Сохранить трек</button>
+    </div>
+
+    <div class="block hidden" id="playlist-block">
+        <div class="meta">
+            <div class="t-title" id="playlist-title">Плейлист</div>
+            <div class="t-artist" id="playlist-count"></div>
+        </div>
+        <button class="btn" id="btn-playlist" disabled>Сохранить плейлист (ZIP)</button>
+    </div>
+
+    <div class="block">
+        <div class="label">Качество звука</div>
+        <div class="seg" id="seg-quality">
+            <button class="seg-btn" data-quality="best">Превосходное</button>
+            <button class="seg-btn" data-quality="optimal">Оптимальное</button>
+            <button class="seg-btn" data-quality="economy">Экономичное</button>
+        </div>
+        <div class="hint" id="quality-hint"></div>
+    </div>
+
+    <div class="block">
+        <div class="label">Настройки</div>
+        <label class="row" id="row-dates">
+            <span>Даты треков</span>
+            <input type="checkbox" data-key="dates">
+        </label>
+        <label class="row" id="row-wave">
+            <span>Скрыть лайки в волне</span>
+            <input type="checkbox" data-key="waveFilter">
+        </label>
+        <label class="row" id="row-anti">
+            <span>Не повторять недавние</span>
+            <input type="checkbox" data-key="antiSkip">
+        </label>
+        <label class="row" id="row-telemetry">
+            <span>Блокировать телеметрию</span>
+            <input type="checkbox" data-key="telemetry">
+        </label>
+    </div>
+</div>
+
+<div class="wrap hidden" id="unsupported">
+    <div class="head"><span class="logo">YMX Tools</span></div>
+    <div class="block">
+        <div class="hint">Откройте вкладку с Яндекс Музыкой — настройки применятся к ней</div>
+    </div>
+</div>
+
+<script src="../lib/browser-polyfill.min.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

@@ -39,6 +39,105 @@ function setMenuItemToggle(titleId, state) {
     }
 }
 
+function ymtClampNum(value, min, max) {
+    var n = parseInt(value, 10);
+    if (isNaN(n)) return null;
+    if (n < min) n = min;
+    if (n > max) n = max;
+    return n;
+}
+
+function updateMenuSlider(titleId, value) {
+    if (!titleId) return;
+    var el = document.querySelector('[data-title-id="' + titleId + '"]');
+    if (el && el._ymtSetValue) el._ymtSetValue(value);
+}
+
+function createSliderMenuItem(item) {
+    var min = item.min;
+    var max = item.max;
+    var step = item.step || 1;
+    var hardMax = item.hardMax || max;
+    var format = item.format || function (v) { return String(v); };
+
+    var li = document.createElement('li');
+    li.className = 'ymt-slider-item';
+    if (item.titleId) li.setAttribute('data-title-id', item.titleId);
+
+    var head = document.createElement('div');
+    head.className = 'ymt-slider-head';
+    var name = document.createElement('span');
+    name.className = 'ymt-slider-name';
+    name.textContent = item.title;
+    var readout = document.createElement('span');
+    readout.className = 'ymt-slider-value';
+    head.appendChild(name);
+    head.appendChild(readout);
+
+    var line = document.createElement('div');
+    line.className = 'ymt-slider-line';
+
+    var range = document.createElement('input');
+    range.type = 'range';
+    range.min = String(min);
+    range.max = String(max);
+    range.step = String(step);
+
+    var num = document.createElement('input');
+    num.type = 'number';
+    num.min = String(min);
+    num.max = String(hardMax);
+    num.step = String(step);
+
+    line.appendChild(range);
+    line.appendChild(num);
+    li.appendChild(head);
+    li.appendChild(line);
+
+    var current = item.value;
+
+    function render(v) {
+        readout.textContent = format(v);
+        num.value = String(v);
+        range.value = String(Math.min(Math.max(v, min), max));
+    }
+
+    function commit(v) {
+        current = v;
+        render(v);
+        if (item.onChange) item.onChange(v);
+    }
+
+    range.addEventListener('input', function () {
+        var v = ymtClampNum(range.value, min, max);
+        if (v === null) return;
+        current = v;
+        render(v);
+    });
+    range.addEventListener('change', function () {
+        var v = ymtClampNum(range.value, min, max);
+        if (v === null) return;
+        commit(v);
+    });
+    num.addEventListener('input', function () {
+        if (num.value === '' || num.value === '-') return;
+        var v = ymtClampNum(num.value, min, hardMax);
+        if (v === null) return;
+        current = v;
+        readout.textContent = format(v);
+        range.value = String(Math.min(Math.max(v, min), max));
+    });
+    num.addEventListener('change', function () {
+        var v = ymtClampNum(num.value, min, hardMax);
+        if (v === null) v = current;
+        commit(v);
+    });
+
+    render(current);
+    li._ymtSetValue = render;
+    return li;
+}
+
 function createNavTab(title, path) {
     let a = document.createElement('a');
     a.className = 'buOTZq_TKQOVyjMLrXvB ZfF8mQ3Iftpwu0aZgDtG yWJHrpNsBvchs9Jjyokk';
@@ -76,8 +175,7 @@ function createDropdown(data) {
         '.ymt_dropbtn .ymt_btn_label { font-size: 14px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; color: #fff; }',
         '.ymt_dropdown-buttons { display: inline-flex; align-items: center; }',
         '.ymt_dropdown { text-align: left; position: relative; display: inline-block; z-index: 77; }',
-        'button:has(> #menuPlaylistYMusicTools) { position: relative !important; }',
-        '#menuPlaylistYMusicTools { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); z-index: 77; }',
+        '#menuPlaylistYMusicTools { position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; margin-right: 8px; z-index: 77; }',
         '.ymt_dropdown-content { display: none; position: absolute; top: calc(100% + 12px); min-width: 260px; background: rgba(28,28,28,0.94); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; padding: 6px; box-shadow: 0 16px 40px -12px rgba(0,0,0,.65); z-index: 78; }',
         '.ymt_dropdown-content li { padding: 10px 14px; text-decoration: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: rgba(255,255,255,.92); cursor: pointer; font-size: 14px; font-weight: 500; border-radius: 10px; margin: 2px 0; transition: background-color .15s ease; }',
         '.ymt_dropdown-content li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
@@ -93,8 +191,20 @@ function createDropdown(data) {
         '.ymt_submenu { display: none; position: absolute; left: calc(100% + 6px); top: -8px; min-width: 220px; background: rgba(28,28,28,0.96); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 6px; box-shadow: 0 16px 40px -12px rgba(0,0,0,.65); z-index: 79; }',
         '.ymt_submenu li { padding: 9px 12px; font-size: 13px; color: rgba(255,255,255,.92); cursor: pointer; border-radius: 8px; margin: 2px 0; font-weight: 500; transition: background-color .15s ease; }',
         '.ymt_submenu li:hover { background: rgba(255,255,255,0.08); }',
+        '.ymt_submenu li.ymt_sub_header { padding: 4px 12px 3px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: rgba(255,255,255,.35); cursor: default; }',
+        '.ymt_submenu li.ymt_sub_header:hover { background: transparent; }',
         '.ymt_submenu li.ymt_sep { padding: 0; margin: 7px 8px; height: 1px; background: rgba(255,255,255,0.08); border-radius: 0; cursor: default; }',
         '.ymt_submenu li.ymt_sep:hover { background: rgba(255,255,255,0.08); }',
+        '.ymt_submenu::before { content:""; position:absolute; left:-6px; top:0; bottom:0; width:6px; }',
+        '.ymt-dropdown-content li.ymt-slider-item, .ymt_submenu li.ymt-slider-item { display:block; padding:11px 12px; }',
+        '.ymt-slider-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:9px; }',
+        '.ymt-slider-name { font-size:13px; color:rgba(255,255,255,0.92); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }',
+        '.ymt-slider-value { font-size:12px; font-weight:600; color:#ffff00; white-space:nowrap; flex-shrink:0; }',
+        '.ymt-slider-line { display:flex; align-items:center; gap:9px; }',
+        '.ymt-slider-line input[type=range] { flex:1; min-width:60px; height:18px; margin:0; accent-color:#ffff00; cursor:pointer; }',
+        '.ymt-slider-line input[type=number] { -moz-appearance:textfield; appearance:textfield; width:60px; padding:5px 4px; border-radius:7px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:#fff; font-size:12.5px; font-family:inherit; outline:none; text-align:center; box-sizing:border-box; }',
+        '.ymt-slider-line input[type=number]:focus { border-color:#ffff00; }',
+        '.ymt-slider-line input[type=number]::-webkit-outer-spin-button, .ymt-slider-line input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; appearance:none; margin:0; }',
     ].join(' ');
 
     let root = document.createElement('span');
@@ -145,6 +255,10 @@ function createMenu(data) {
             ul.append(sep);
             continue;
         }
+        if (item && item.slider) {
+            ul.appendChild(createSliderMenuItem(item));
+            continue;
+        }
         let li = document.createElement('li');
 
         if (item.hasOwnProperty('children')) {
@@ -163,9 +277,22 @@ function createMenu(data) {
             subUl.className = 'ymt_submenu';
             for (let j = 0; j < item.children.length; j++) {
                 let subItem = item.children[j];
+                if (subItem && subItem.divider) {
+                    let subSep = document.createElement('li');
+                    subSep.className = 'ymt_sep';
+                    subUl.append(subSep);
+                    continue;
+                }
+                if (subItem && subItem.slider) {
+                    subUl.appendChild(createSliderMenuItem(subItem));
+                    continue;
+                }
                 let subLi = document.createElement('li');
                 if (subItem.hasOwnProperty('titleId')) subLi.setAttribute('data-title-id', subItem.titleId);
-                if (subItem.toggle) {
+                if (subItem.header) {
+                    subLi.className = 'ymt_sub_header';
+                    subLi.textContent = typeof subItem.title === 'function' ? subItem.title() : subItem.title;
+                } else if (subItem.toggle) {
                     let labelSpan = document.createElement('span');
                     labelSpan.textContent = typeof subItem.title === 'function' ? subItem.title() : subItem.title;
                     subLi.appendChild(labelSpan);
@@ -173,7 +300,7 @@ function createMenu(data) {
                 } else {
                     subLi.textContent = typeof subItem.title === 'function' ? subItem.title() : subItem.title;
                 }
-                subLi.addEventListener('click', subItem.handler);
+                if (subItem.handler) subLi.addEventListener('click', subItem.handler);
                 subUl.append(subLi);
             }
             li.append(subUl);

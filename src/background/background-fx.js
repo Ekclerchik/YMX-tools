@@ -128,7 +128,7 @@ function buildID3v2Tag(tags, coverArrayBuffer) {
 
 async function handleDownloadTrack(payload) {
     try {
-        const { directUrl, coverUrl, tags, filename } = payload;
+        const { directUrl, coverUrl, tags, filename, saveAs } = payload;
 
         const mp3Res = await fetch(directUrl);
         if (!mp3Res.ok) throw new Error('Сбой при загрузке аудиофайла (' + mp3Res.status + ')');
@@ -155,7 +155,7 @@ async function handleDownloadTrack(payload) {
             url: url,
             filename: filename,
             conflictAction: 'uniquify',
-            saveAs: false,
+            saveAs: !!saveAs,
         });
         setTimeout(() => URL.revokeObjectURL(url), 60000);
 

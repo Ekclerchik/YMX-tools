@@ -1,54 +1,14 @@
-const GIFS = [
-    'https://media.giphy.com/media/dGUULYPrB0SQsbXrEx/giphy.gif',
-    'https://media.giphy.com/media/pOZhmE42D1WrCWATLK/giphy.gif',
-    'https://media.giphy.com/media/Y1jRz3dWxnxamSyISA/giphy.gif',
-    'https://media.giphy.com/media/dasJZ7haCEapEH9KDr/giphy.gif',
-    'https://media.giphy.com/media/9AIYt5rZ1cQVdwjFPd/giphy.gif',
-    'https://media.giphy.com/media/MAjK6dUDas2gKYQdhT/giphy.gif'
-]
-
 function setInnerHTML(el, html) {
     el.innerHTML = html;
 }
 
-function fireCollectorSwal(title) {
-    // fireLoadingSwal(getMessage('info_playlist_creating', [title]));
-    fireHammerSwal()
-}
-
-function fireWaitingServerSwal() {
-    fireInfoSwal(getMessage('info_server_waiting'));
-}
-
 function fireLoadingSwal(text, title) {
-    fireGifSwal({
-        title: title,
-        text: text,
-        imageUrl: 'https://i.ibb.co/D8R6YXC/Spin-2-9s-100px.gif',
-    });
-}
-
-function fireDrawingSwal(text, title) {
-    fireGifSwal({
-        title: title,
-        text: text,
-        imageUrl: 'https://media.giphy.com/media/WQId4twEIvSyOlu3fm/giphy.gif',
-    });
-}
-
-function fireHammerSwal(text, title) {
-    fireGifSwal({
-        title: title,
-        text: text,
-        imageUrl: getRandomElement(GIFS),
-    });
-}
-
-function fireGifSwal(data) {
     Swal.fire({
-        imageUrl: data.imageUrl,
-        title: data.title,
-        text: data.text,
+        title: title,
+        html: '<div style="display:flex;align-items:center;gap:12px;justify-content:center;">'
+            + '<span style="display:inline-block;width:26px;height:26px;border:3px solid rgba(255,255,0,.3);border-top-color:#ffff00;border-radius:50%;animation:ymt-dl-spin .8s linear infinite;"></span>'
+            + (text ? '<span>' + escapeHtml(text) + '</span>' : '')
+            + '</div>',
         allowOutsideClick: false,
         showConfirmButton: false,
     });

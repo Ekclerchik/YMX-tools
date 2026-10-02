@@ -13,9 +13,11 @@
     var LIKES_PAGE_SIZE = 100;
     var LIKES_MAX_PAGES = 30;
     var ANTISKIP_KEY = 'ymtAntiSkip';
+    var ANTISKIP_HOURS_KEY = 'ymtAntiSkipHours';
     var PLAY_LOG_KEY = 'ymtPlayedLog';
-    var PLAY_TTL_MS = 48 * 60 * 60 * 1000;
+    var PLAY_TTL_DEFAULT_MS = 48 * 60 * 60 * 1000;
     var PLAY_LOG_MAX = 500;
+    var WAVE_STATS_KEY = 'ymtWaveStats';
 
     var _waveSessionId = null;
     var _uid = null;
@@ -93,6 +95,33 @@
         } catch (e) {
             return true;
         }
+    }
+
+    function playTtlMs() {
+        try {
+            var hours = parseInt(localStorage.getItem(ANTISKIP_HOURS_KEY), 10);
+            if (!hours || hours <= 0) return PLAY_TTL_DEFAULT_MS;
+            return hours * 60 * 60 * 1000;
+        } catch (e) {
+            return PLAY_TTL_DEFAULT_MS;
+        }
+    }
+
+    function todayKey() {
+        var d = new Date();
+        return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+    }
+
+    function bumpWaveStats(liked, recent) {
+        if (!liked && !recent) return;
+        try {
+            var raw = JSON.parse(localStorage.getItem(WAVE_STATS_KEY) || 'null');
+            var day = todayKey();
+            var stats = (raw && raw.day === day) ? raw : { day: day, liked: 0, recent: 0 };
+            stats.liked += liked;
+            stats.recent += recent;
+            localStorage.setItem(WAVE_STATS_KEY, JSON.stringify(stats));
+        } catch (e) {}
     }
 
     function parseSessionNew(text) {
@@ -254,11 +283,12 @@
     function touchPlayLog(ids) {
         if (!ids || !ids.size) return;
         var now = Date.now();
+        var ttl = playTtlMs();
         var map = {};
         var arr = loadPlayLog();
         for (var i = 0; i < arr.length; i++) {
             var e = arr[i];
-            if (e && e.id && now - e.ts < PLAY_TTL_MS) map[e.id] = Math.max(map[e.id] || 0, e.ts);
+            if (e && e.id && now - e.ts < ttl) map[e.id] = Math.max(map[e.id] || 0, e.ts);
         }
         ids.forEach(function (id) {
             map[id] = now;
@@ -273,9 +303,9 @@
         savePlayLog(out);
     }
 
-    function isRecentlyPlayed(playedLog, id, now) {
+    function isRecentlyPlayed(playedLog, id, now, ttl) {
         for (var i = 0; i < playedLog.length; i++) {
-            if (playedLog[i].id === id && now - playedLog[i].ts < PLAY_TTL_MS) return true;
+            if (playedLog[i].id === id && now - playedLog[i].ts < ttl) return true;
         }
         return false;
     }
@@ -408,9 +438,11 @@
         var seq = json && json.sequence;
         if (!Array.isArray(seq) || seq.length === 0) return null;
         var now = Date.now();
+        var ttl = playTtlMs();
         var playedLog = skipEnabled ? loadPlayLog() : null;
         var keep = [];
         var removed = 0;
+        var removedLiked = 0;
         var removedSkip = 0;
         for (var i = 0; i < seq.length; i++) {
             var item = seq[i] || {};
@@ -418,15 +450,17 @@
             var isLiked = likeEnabled && _likedSet && (item.liked === true || (id !== undefined && id !== null && _likedSet.has(String(id))));
             var isRecent = false;
             if (playedLog && id !== undefined && id !== null) {
-                isRecent = isRecentlyPlayed(playedLog, String(id), now);
+                isRecent = isRecentlyPlayed(playedLog, String(id), now, ttl);
             }
             if (isLiked || isRecent) {
                 removed++;
+                if (isLiked && !isRecent) removedLiked++;
                 if (isRecent) removedSkip++;
                 continue;
             }
             keep.push(item);
         }
+        bumpWaveStats(removedLiked, removedSkip);
         if (keep.length === 0) keep = seq.slice(0, 1);
         var keptSeed = false;
         if (tag === 'first') {
@@ -569,7 +603,7 @@
                             localStorage.setItem(WAVE_SESSION_KEY, info.sessionId || '');
                         } catch (e) {}
                     }
-                    if (!waveFilterEnabled()) return response;
+                    if (!waveFilterEnabled() && !antiSkipEnabled()) return response;
                     return ensureLikedSet().then(function () {
                         return Promise.resolve(filterWaveResponse(text, 'first')).then(function (out) {
                             if (!out) return response;

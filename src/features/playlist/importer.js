@@ -31,6 +31,13 @@ function ensureImportStyle() {
         '.ymt-import-clear { padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.6); font-size: 14px; cursor: pointer; transition: all 0.15s; }',
         '.ymt-import-clear:hover { background: rgba(255,255,255,0.08); color: #fff; }',
         '.ymt-import-stats { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 8px; }',
+        '.ymt-import-link { display: flex; gap: 8px; margin-bottom: 12px; }',
+        '.ymt-import-link-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; background: rgba(255,255,255,0.06); color: #fff; font-size: 13px; outline: none; box-sizing: border-box; }',
+        '.ymt-import-link-input:focus { border-color: rgba(255,255,255,0.3); }',
+        '.ymt-import-link-input::placeholder { color: rgba(255,255,255,0.35); }',
+        '.ymt-import-link-go { padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: rgba(255,255,255,0.7); font-size: 13px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }',
+        '.ymt-import-link-go:hover { background: rgba(255,255,255,0.08); color: #fff; }',
+        '.ymt-import-link-go:disabled { opacity: 0.5; cursor: default; }',
     ].join('\n');
     document.head.appendChild(s);
 }
@@ -116,6 +123,10 @@ function renderImportView() {
     if (!root) return;
 
     var html = '';
+    html += '<div class="ymt-import-link">';
+    html += '<input type="text" id="ymt-import-link-input" class="ymt-import-link-input" placeholder="Ссылка на трек, альбом или плейлист" autocomplete="off">';
+    html += '<button class="ymt-import-link-go" id="ymt-import-link-go">Загрузить</button>';
+    html += '</div>';
     html += '<div class="ymt-import-drop" id="ymt-import-drop">';
     html += '<div class="ymt-import-drop-icon">\ud83d\udcc1</div>';
     html += '<div class="ymt-import-drop-text">\u041f\u0435\u0440\u0435\u0442\u0430\u0449\u0438\u0442\u0435 \u0444\u0430\u0439\u043b \u0438\u043b\u0438 <b>\u043d\u0430\u0436\u043c\u0438\u0442\u0435</b> \u0434\u043b\u044f \u0432\u044b\u0431\u043e\u0440\u0430</div>';
@@ -132,6 +143,20 @@ function renderImportView() {
 
     var drop = document.getElementById('ymt-import-drop');
     var fileInput = document.getElementById('ymt-import-file');
+    var linkInput = document.getElementById('ymt-import-link-input');
+    var linkGo = document.getElementById('ymt-import-link-go');
+
+    function runLinkImport() {
+        if (!linkGo.disabled) handleImportLink(linkInput.value);
+    }
+
+    linkGo.addEventListener('click', runLinkImport);
+    linkInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            runLinkImport();
+        }
+    });
 
     drop.addEventListener('click', function () { fileInput.click(); });
     drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('dragover'); });
@@ -185,6 +210,122 @@ function handleImportFile(file) {
         searchImportTracks();
     };
     reader.readAsText(file);
+}
+
+function setImportLinkBusy(busy) {
+    var btn = document.getElementById('ymt-import-link-go');
+    if (btn) btn.disabled = !!busy;
+}
+
+function handleImportLink(rawUrl) {
+    var url = String(rawUrl || '').trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+    var pathMatch = url.match(/music\.yandex\.[a-z]{2,3}(\/[^?#]*)/i);
+    if (!pathMatch) {
+        fireErrorSwal('Это не похоже на ссылку Яндекс Музыки');
+        return;
+    }
+
+    var path = pathMatch[1];
+    var domain = location.hostname.split('.')[2];
+    var base = 'https://api.music.yandex.' + domain;
+
+    var trackMatch = path.match(/\/track\/(\d+)/);
+    var kindMatch = path.match(/\/(?:album|playlist|playlists)\/([\w-]+)/);
+
+    setImportLinkBusy(true);
+    IMPORT_STATE.searching = true;
+
+    if (trackMatch) {
+        requestGET(base + '/tracks/' + trackMatch[1], function (response) {
+            IMPORT_STATE.searching = false;
+            setImportLinkBusy(false);
+            var track = response && response.result ? response.result[0] : null;
+            if (!track || !track.id) {
+                fireErrorSwal('Не удалось получить трек по этой ссылке');
+                return;
+            }
+            applyImportedTracks([track]);
+        });
+        return;
+    }
+
+    if (!kindMatch) {
+        IMPORT_STATE.searching = false;
+        setImportLinkBusy(false);
+        fireErrorSwal('Поддерживаются ссылки на трек, альбом или плейлист');
+        return;
+    }
+
+    var kind = kindMatch[1];
+    var collected = [];
+    var page = 0;
+
+    function loadNextPage() {
+        var pageUrl = base + '/playlists/' + kind + '/tracks?page=' + page + '&size=150&richTracks=true';
+        requestGET(pageUrl, function (response) {
+            var rdata = response && (response.result || response);
+            var arr = (rdata && rdata.tracks) ? rdata.tracks : [];
+            collected = collected.concat(arr);
+            if (arr.length > 0 && page < 29) {
+                page++;
+                loadNextPage();
+                return;
+            }
+            IMPORT_STATE.searching = false;
+            setImportLinkBusy(false);
+            applyImportedTracks(collected);
+        });
+    }
+
+    loadNextPage();
+}
+
+function applyImportedTracks(rawList) {
+    IMPORT_STATE.parsedTracks = [];
+    IMPORT_STATE.searchResults = {};
+
+    for (var i = 0; i < rawList.length; i++) {
+        var pos = rawList[i];
+        var t = (pos && pos.track) ? pos.track : pos;
+        if (!t || !t.id || t.available === false) continue;
+
+        var artists = [];
+        if (t.artists) {
+            for (var j = 0; j < t.artists.length; j++) {
+                if (t.artists[j] && t.artists[j].name) artists.push(t.artists[j].name);
+            }
+        }
+
+        var trackTitle = t.title || '';
+        var index = IMPORT_STATE.parsedTracks.length;
+        IMPORT_STATE.parsedTracks.push({
+            artist: artists.join(', '),
+            title: trackTitle,
+            query: artists.length ? (artists.join(', ') + ' - ' + trackTitle) : trackTitle,
+        });
+        IMPORT_STATE.searchResults[index] = {
+            found: true,
+            id: t.id,
+            title: trackTitle,
+            artists: artists,
+            coverUrl: getTrackCoverUrl(t),
+        };
+    }
+
+    if (IMPORT_STATE.parsedTracks.length === 0) {
+        fireErrorSwal('По этой ссылке не нашлось доступных треков');
+        return;
+    }
+
+    IMPORT_STATE.modalTitle = 'Импорт по ссылке';
+    var titleEl = document.querySelector('.swal2-title');
+    if (titleEl) titleEl.textContent = IMPORT_STATE.modalTitle;
+
+    renderImportResults();
+    updateImportSubmitState();
 }
 
 function parseTrackLine(line) {

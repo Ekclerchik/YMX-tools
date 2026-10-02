@@ -66,6 +66,98 @@ var DOWNLOAD_SEARCH_MENU_ITEM = {
     handler: onClickDownloadSearch,
 };
 
+var BITRATE_KEY = 'ymtBitrate';
+
+function normalizeBitrate(value) {
+    var val = parseInt(value, 10);
+    if (isNaN(val) || val <= 0) return 0;
+    if (val > 320) val = 320;
+    val = Math.round(val / 32) * 32;
+    return Math.max(96, val);
+}
+
+function getSelectedBitrate() {
+    return normalizeBitrate(localStorage.getItem(BITRATE_KEY));
+}
+
+function setSelectedBitrate(value) {
+    try {
+        localStorage.setItem(BITRATE_KEY, String(normalizeBitrate(value)));
+    } catch (e) {}
+    refreshBitrateMenuLabels();
+}
+
+function formatBitrateLabel(value) {
+    var val = normalizeBitrate(value);
+    return val ? val + ' \u043a\u0431\u0438\u0442/\u0441' : '\u041c\u0430\u043a\u0441\u0438\u043c\u0443\u043c';
+}
+
+function getSelectedBitrateLabel() {
+    return formatBitrateLabel(getSelectedBitrate());
+}
+
+function refreshBitrateMenuLabels() {
+    updateMenuSlider('ymt-bitrate-slider', getSelectedBitrate());
+}
+
+function getBitrateMenuItems() {
+    var items = [{
+        title: '\u041a\u0430\u0447\u0435\u0441\u0442\u0432\u043e',
+        header: true,
+    }];
+    items.push({
+        slider: true,
+        titleId: 'ymt-bitrate-slider',
+        title: '\u0411\u0438\u0442\u0440\u0435\u0439\u0442',
+        min: 0,
+        max: 320,
+        step: 32,
+        hardMax: 320,
+        value: getSelectedBitrate(),
+        format: formatBitrateLabel,
+        onChange: function (value) {
+            setSelectedBitrate(value);
+        },
+    });
+    items.push({ divider: true });
+    items.push({
+        title: '\u0421\u043a\u043b\u0430\u0434\u044b\u0432\u0430\u0442\u044c \u0432 \u043f\u043e\u0434\u043f\u0430\u043f\u043a\u0443',
+        titleId: 'ymt-dl-folder',
+        toggle: true,
+        defaultState: isDownloadToFolderEnabled(),
+        handler: function () {
+            setDownloadToFolderEnabled(!isDownloadToFolderEnabled());
+            setMenuItemToggle('ymt-dl-folder', isDownloadToFolderEnabled());
+        },
+    });
+    items.push({
+        title: '\u0421\u043f\u0440\u0430\u0448\u0438\u0432\u0430\u0442\u044c, \u043a\u0443\u0434\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u044f\u0442\u044c',
+        titleId: 'ymt-dl-saveas',
+        toggle: true,
+        defaultState: isDownloadSaveAsEnabled(),
+        handler: function () {
+            setDownloadSaveAsEnabled(!isDownloadSaveAsEnabled());
+            setMenuItemToggle('ymt-dl-saveas', isDownloadSaveAsEnabled());
+        },
+    });
+    items.push({ divider: true });
+    return items;
+}
+
+function pickDownloadVariant(pool) {
+    if (!pool || pool.length === 0) return null;
+    var want = getSelectedBitrate();
+    if (!want) return pool[0];
+    var i;
+    for (i = 0; i < pool.length; i++) {
+        if ((pool[i].bitrateInKbps || 0) === want) return pool[i];
+    }
+    for (i = 0; i < pool.length; i++) {
+        if ((pool[i].bitrateInKbps || 0) <= want) return pool[i];
+    }
+    return pool[pool.length - 1];
+}
+
 function md5(str) {
     function safeAdd(x, y) {
         var lsw = (x & 0xFFFF) + (y & 0xFFFF);
@@ -129,7 +221,8 @@ function getBestDownloadUrl(trackId) {
         var pool = variants.filter(function (v) { return v.codec === 'mp3' && !v.preview && v.downloadInfoUrl; });
         pool.sort(function (a, b) { return (b.bitrateInKbps || 0) - (a.bitrateInKbps || 0); });
         if (pool.length === 0) throw new Error('\u041d\u0435\u0442 MP3 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0430 \u0434\u043b\u044f \u0442\u0440\u0435\u043a\u0430');
-        var best = pool[0];
+        var best = pickDownloadVariant(pool);
+        if (!best) throw new Error('\u041d\u0435\u0442 MP3 \u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0430 \u0434\u043b\u044f \u0442\u0440\u0435\u043a\u0430');
         return fetch(best.downloadInfoUrl).then(function (r) {
             if (!r.ok) throw new Error('\u041e\u0448\u0438\u0431\u043a\u0430 \u043f\u043e\u043b\u0443\u0447\u0435\u043d\u0438\u044f \u0441\u0441\u044b\u043b\u043a\u0438');
             return r.text();
@@ -181,6 +274,42 @@ function sanitizeDownloadFileName(name) {
     return String(name || 'track').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 150);
 }
 
+var DL_FOLDER_KEY = 'ymtDlFolder';
+var DL_SAVEAS_KEY = 'ymtDlSaveAs';
+
+function isDownloadToFolderEnabled() {
+    return localStorage.getItem(DL_FOLDER_KEY) === 'true';
+}
+
+function setDownloadToFolderEnabled(val) {
+    localStorage.setItem(DL_FOLDER_KEY, val ? 'true' : 'false');
+}
+
+function isDownloadSaveAsEnabled() {
+    return localStorage.getItem(DL_SAVEAS_KEY) === 'true';
+}
+
+function setDownloadSaveAsEnabled(val) {
+    localStorage.setItem(DL_SAVEAS_KEY, val ? 'true' : 'false');
+}
+
+function getCurrentPlaylistTitle() {
+    var meta = null;
+    try {
+        meta = JSON.parse(document.documentElement.getAttribute('data-ymt-playlist-meta') || 'null');
+    } catch (e) {}
+    if (meta && meta.title) return meta.title;
+    var title = String(document.title || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    return title.replace(/\s*[\u2013\u2014-]\s*\u042f\u043d\u0434\u0435\u043a\u0441\s+\u041c\u0443\u0437\u044b\u043a\u0430\s*$/, '').trim();
+}
+
+function buildDownloadPath(fileName, folderTitle) {
+    if (!isDownloadToFolderEnabled()) return fileName;
+    var folder = sanitizeDownloadFileName(folderTitle || getCurrentPlaylistTitle() || 'YMX');
+    if (!folder) return fileName;
+    return folder + '/' + fileName;
+}
+
 function sendDownloadToBackground(payload) {
     return API.runtime.sendMessage({ action: 'downloadTrack', payload: payload }).then(function (resp) {
         if (resp && resp.ok) return resp;
@@ -194,12 +323,13 @@ function downloadSingleTrack(trackId) {
         var info = arr[1];
         if (!meta) throw new Error('\u0422\u0440\u0435\u043a \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d');
         var tags = buildTrackTags(meta);
-        var filename = sanitizeDownloadFileName(tags.fileName) + '.mp3';
+        var filename = buildDownloadPath(sanitizeDownloadFileName(tags.fileName) + '.mp3');
         return sendDownloadToBackground({
             directUrl: info.url,
             coverUrl: tags.coverUrl,
             tags: { title: tags.title, artist: tags.artist, album: tags.album, year: tags.year, genre: tags.genre },
             filename: filename,
+            saveAs: isDownloadSaveAsEnabled(),
         }).then(function () { return filename; });
     });
 }
@@ -390,7 +520,7 @@ function onClickDownloadPlaylist() {
         var count = data.tracks.length;
         Swal.fire({
             title: '\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u043f\u043b\u0435\u0439\u043b\u0438\u0441\u0442',
-            html: '\u0422\u0440\u0435\u043a\u043e\u0432: <b>' + count + '</b><br><br>\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u0432\u0441\u0435 \u0432 MP3 (\u043c\u0430\u043a\u0441. \u0431\u0438\u0442\u0440\u0435\u0439\u0442) \u0438 \u0443\u043f\u0430\u043a\u043e\u0432\u0430\u0442\u044c \u0432 ZIP?<br><span style="font-size:12px;color:rgba(255,255,255,0.4)">\u041d\u0443\u0436\u043d\u0430 \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0430 Plus/\u041f\u0440\u0435\u043c\u0438\u0443\u043c \u0434\u043b\u044f \u043f\u043e\u043b\u043d\u044b\u0445 \u0432\u0435\u0440\u0441\u0438\u0439.</span>',
+            html: '\u0422\u0440\u0435\u043a\u043e\u0432: <b>' + count + '</b><br><br>\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u0432\u0441\u0435 \u0432 MP3 (\u043a\u0430\u0447\u0435\u0441\u0442\u0432\u043e: <b>' + escapeHtml(getSelectedBitrateLabel()) + '</b>) \u0438 \u0443\u043f\u0430\u043a\u043e\u0432\u0430\u0442\u044c \u0432 ZIP?<br><span style="font-size:12px;color:rgba(255,255,255,0.4)">\u041d\u0443\u0436\u043d\u0430 \u043f\u043e\u0434\u043f\u0438\u0441\u043a\u0430 Plus/\u041f\u0440\u0435\u043c\u0438\u0443\u043c \u0434\u043b\u044f \u043f\u043e\u043b\u043d\u044b\u0445 \u0432\u0435\u0440\u0441\u0438\u0439.</span>',
             showCancelButton: true,
             confirmButtonText: '\u0421\u043a\u0430\u0447\u0430\u0442\u044c ZIP',
             cancelButtonText: '\u041e\u0442\u043c\u0435\u043d\u0430',
@@ -435,7 +565,7 @@ function downloadPlaylistZip(data) {
 
     API.runtime.sendMessage({
         action: 'downloadPlaylistZip',
-        payload: { domain: domain, playlistTitle: title, tracks: tracks, sessionId: sessionId },
+        payload: { domain: domain, playlistTitle: title, tracks: tracks, sessionId: sessionId, bitrate: getSelectedBitrate(), saveAs: isDownloadSaveAsEnabled() },
     }).then(function (resp) {
         session.active = false;
         if (Swal.isVisible()) Swal.close();

@@ -65,13 +65,23 @@ async function getTrackMetaBG(domain, trackId) {
     return result || null;
 }
 
-async function getBestDownloadUrlBG(domain, trackId) {
+function pickDownloadVariantBG(pool, bitrate) {
+    if (!pool || pool.length === 0) return null;
+    const want = parseInt(bitrate, 10) || 0;
+    if (!want) return pool[0];
+    for (const v of pool) if ((v.bitrateInKbps || 0) === want) return v;
+    for (const v of pool) if ((v.bitrateInKbps || 0) <= want) return v;
+    return pool[pool.length - 1];
+}
+
+async function getBestDownloadUrlBG(domain, trackId, bitrate) {
     const response = await requestGET('https://api.music.yandex.' + domain + '/tracks/' + trackId + '/download-info');
     const variants = (response && response.result) ? response.result : [];
     const pool = variants.filter((v) => v.codec === 'mp3' && !v.preview && v.downloadInfoUrl);
     pool.sort((a, b) => (b.bitrateInKbps || 0) - (a.bitrateInKbps || 0));
     if (pool.length === 0) throw new Error('Нет MP3 варианта для трека');
-    const best = pool[0];
+    const best = pickDownloadVariantBG(pool, bitrate);
+    if (!best) throw new Error('Нет MP3 варианта для трека');
 
     const res = await fetch(best.downloadInfoUrl);
     if (!res.ok) throw new Error('Ошибка получения ссылки');
@@ -109,6 +119,21 @@ function buildTrackTagsBG(meta) {
 
 function sanitizeZipName(name) {
     return String(name || 'track').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 150);
+}
+
+function isDownloadToFolderEnabled() {
+    try {
+        return localStorage.getItem('ymtDlFolder') === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+function buildDownloadPath(fileName, folderTitle) {
+    if (!isDownloadToFolderEnabled()) return fileName;
+    var folder = sanitizeZipName(folderTitle || 'YMX');
+    if (!folder) return fileName;
+    return folder + '/' + fileName;
 }
 
 function dedupeZipName(name, used) {
@@ -179,7 +204,7 @@ function handleDownloadPlaylistCancel(sessionId) {
 }
 
 async function handleDownloadPlaylistZip(payload, sender) {
-    const { domain, playlistTitle, tracks, sessionId } = payload || {};
+    const { domain, playlistTitle, tracks, sessionId, bitrate } = payload || {};
     const list = Array.isArray(tracks) ? tracks : [];
     const total = list.length;
     if (!domain || total === 0) return { ok: false, error: 'Нет данных плейлиста' };
@@ -214,7 +239,7 @@ async function handleDownloadPlaylistZip(payload, sender) {
         try {
             const meta = await getTrackMetaBG(domain, trackId);
             if (!meta) throw new Error('Трек не найден');
-            const info = await getBestDownloadUrlBG(domain, trackId);
+            const info = await getBestDownloadUrlBG(domain, trackId, bitrate);
             const tags = buildTrackTagsBG(meta);
 
             const mp3Res = await fetch(info.url);
@@ -274,7 +299,7 @@ async function handleDownloadPlaylistZip(payload, sender) {
 
     const blob = new Blob(zipParts, { type: 'application/zip' });
     const url = URL.createObjectURL(blob);
-    const zipName = sanitizeZipName(playlistTitle || 'playlist') + '.zip';
+    const zipName = buildDownloadPath(sanitizeZipName(playlistTitle || 'playlist') + '.zip', playlistTitle);
 
     let downloadId;
     try {
@@ -282,7 +307,7 @@ async function handleDownloadPlaylistZip(payload, sender) {
             url,
             filename: zipName,
             conflictAction: 'uniquify',
-            saveAs: false,
+            saveAs: !!payload.saveAs,
         });
     } catch (e) {
         URL.revokeObjectURL(url);

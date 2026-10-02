@@ -63,6 +63,7 @@ function onClickWaveFilterToggle() {
     var next = !isWaveFilterEnabled();
     setWaveFilterEnabled(next);
     setMenuItemToggle('ymt-wave-filter-title', next);
+    location.reload();
 }
 
 function isAntiSkipEnabled() {
@@ -77,6 +78,99 @@ function onClickAntiSkipToggle() {
     var next = !isAntiSkipEnabled();
     setAntiSkipEnabled(next);
     setMenuItemToggle('ymt-anti-skip-title', next);
+    location.reload();
+}
+
+var ANTISKIP_HOURS_KEY = 'ymtAntiSkipHours';
+var WAVE_STATS_KEY = 'ymtWaveStats';
+
+function normalizeAntiSkipHours(value) {
+    var val = parseInt(value, 10);
+    if (isNaN(val) || val <= 0) return 48;
+    if (val > 8760) return 8760;
+    return val;
+}
+
+function getAntiSkipHours() {
+    return normalizeAntiSkipHours(localStorage.getItem(ANTISKIP_HOURS_KEY));
+}
+
+function setAntiSkipHours(hours) {
+    localStorage.setItem(ANTISKIP_HOURS_KEY, String(normalizeAntiSkipHours(hours)));
+}
+
+function pluralRu(n, one, few, many) {
+    var abs = Math.abs(n) % 100;
+    var last = abs % 10;
+    if (abs > 10 && abs < 20) return many;
+    if (last > 1 && last < 5) return few;
+    if (last === 1) return one;
+    return many;
+}
+
+function formatAntiSkipHours(value) {
+    var hours = normalizeAntiSkipHours(value);
+    if (hours >= 168 && hours % 168 === 0) {
+        var weeks = hours / 168;
+        return weeks + ' ' + pluralRu(weeks, '\u043d\u0435\u0434\u0435\u043b\u044f', '\u043d\u0435\u0434\u0435\u043b\u0438', '\u043d\u0435\u0434\u0435\u043b\u044c');
+    }
+    if (hours >= 24 && hours % 24 === 0) {
+        var days = hours / 24;
+        return days + ' ' + pluralRu(days, '\u0434\u0435\u043d\u044c', '\u0434\u043d\u044f', '\u0434\u043d\u0435\u0439');
+    }
+    return hours + ' ' + pluralRu(hours, '\u0447\u0430\u0441', '\u0447\u0430\u0441\u0430', '\u0447\u0430\u0441\u043e\u0432');
+}
+
+function refreshAntiSkipHoursLabels() {
+    updateMenuSlider('ymt-antiskip-hours', getAntiSkipHours());
+}
+
+function getAntiSkipHoursMenuItems() {
+    return [{
+        slider: true,
+        titleId: 'ymt-antiskip-hours',
+        title: '\u041d\u0435 \u043f\u043e\u0432\u0442\u043e\u0440\u044f\u0442\u044c \u0442\u0440\u0435\u043a\u0438 \u0437\u0430',
+        min: 1,
+        max: 336,
+        step: 1,
+        hardMax: 8760,
+        value: getAntiSkipHours(),
+        format: formatAntiSkipHours,
+        onChange: function (value) {
+            setAntiSkipHours(value);
+            refreshAntiSkipHoursLabels();
+        },
+    }];
+}
+
+function getWaveStats() {
+    var raw = null;
+    try {
+        raw = JSON.parse(localStorage.getItem(WAVE_STATS_KEY) || 'null');
+    } catch (e) {}
+    if (!raw || typeof raw !== 'object') return { liked: 0, recent: 0 };
+    return { liked: raw.liked || 0, recent: raw.recent || 0 };
+}
+
+function waveStatsLabel() {
+    if (!isWaveFilterEnabled() && !isAntiSkipEnabled()) return '\u0424\u0438\u043b\u044c\u0442\u0440 \u0432\u043e\u043b\u043d\u044b \u0432\u044b\u043a\u043b\u044e\u0447\u0451\u043d';
+    var stats = getWaveStats();
+    var total = stats.liked + stats.recent;
+    if (!total) return '\u0421\u0435\u0433\u043e\u0434\u043d\u044f \u043d\u0435 \u0441\u043a\u0440\u044b\u0442\u043e \u043d\u0438 \u043e\u0434\u043d\u043e\u0433\u043e \u0442\u0440\u0435\u043a\u0430';
+    var parts = [];
+    if (stats.liked) parts.push('\u043b\u0430\u0439\u043a\u0438 ' + stats.liked);
+    if (stats.recent) parts.push('\u043d\u0435\u0434\u0430\u0432\u043d\u0438\u0435 ' + stats.recent);
+    return '\u0421\u043a\u0440\u044b\u0442\u043e \u0441\u0435\u0433\u043e\u0434\u043d\u044f: ' + total + ' (' + parts.join(', ') + ')';
+}
+
+function getWaveStatsMenuItems() {
+    return [{
+        title: waveStatsLabel,
+        titleId: 'ymt-wave-stats',
+        handler: function () {
+            fireInfoSwal(waveStatsLabel());
+        },
+    }];
 }
 
 function isDatesEnabled(callback) {
@@ -90,16 +184,19 @@ function setDatesEnabled(val, callback) {
 }
 
 function onClickDatesToggle() {
-    var newState = !DATE_CURRENT_STATE;
-    DATE_CURRENT_STATE = newState;
-    setMenuItemToggle('ymt-dates-title', newState);
-    if (newState) {
+    applyDatesState(!DATE_CURRENT_STATE);
+}
+
+function applyDatesState(val) {
+    DATE_CURRENT_STATE = !!val;
+    setMenuItemToggle('ymt-dates-title', DATE_CURRENT_STATE);
+    if (DATE_CURRENT_STATE) {
         startTrackDateInjection();
     } else {
         stopTrackDateInjection();
         document.querySelectorAll('.ymt-release-date').forEach(function(el){el.remove();});
     }
-    setDatesEnabled(newState);
+    setDatesEnabled(DATE_CURRENT_STATE);
 }
 
 document.addEventListener('click', onClickOutsideDropdown);

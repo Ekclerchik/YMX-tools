@@ -373,7 +373,7 @@ function jumpToTrackByIndex(matchPos) {
         match.element = el;
         doHighlight(el);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        reapplyHighlightRetry(trackIndex, 15);
+        reapplyHighlightRetry(trackIndex, 15, prevEl);
         return true;
     }
 
@@ -393,7 +393,7 @@ function jumpToTrackByIndex(matchPos) {
         match.element = el;
         doHighlight(el);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        reapplyHighlightRetry(trackIndex, 15);
+        reapplyHighlightRetry(trackIndex, 15, prevEl);
     }, 30, prevEl);
 
     return true;
@@ -491,11 +491,11 @@ function doHighlight(el) {
     el.setAttribute('data-ymt-highlight', '');
 }
 
-function reapplyHighlightRetry(trackIndex, maxAttempts) {
+function reapplyHighlightRetry(trackIndex, maxAttempts, excludeEl) {
     var attempts = 0;
     var timer = setInterval(function () {
         attempts++;
-        var el = findTrackElementByIndex(trackIndex, prevEl);
+        var el = findTrackElementByIndex(trackIndex, excludeEl);
         if (el && !el.hasAttribute('data-ymt-highlight')) {
             doHighlight(el);
         }

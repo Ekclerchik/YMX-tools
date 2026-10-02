@@ -1,0 +1,178 @@
+:root {
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    width: 340px;
+    margin: 0;
+    background: #0f0f0f;
+    color: #fff;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.wrap {
+    padding: 14px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.logo {
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffff00;
+}
+
+.block {
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    margin-bottom: 10px;
+}
+
+.track {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.cover {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.08);
+    background-size: cover;
+    background-position: center;
+}
+
+.meta {
+    min-width: 0;
+    flex: 1;
+}
+
+.t-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.t-artist {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 3px;
+}
+
+.btn {
+    width: 100%;
+    padding: 9px;
+    border: none;
+    border-radius: 12px;
+    background: #ffff00;
+    color: #000;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn:hover {
+    background: #e6e600;
+}
+
+.btn:disabled {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.3);
+    cursor: default;
+}
+
+.label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 8px;
+}
+
+.seg {
+    display: flex;
+    gap: 4px;
+}
+
+.seg-btn {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.seg-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+}
+
+.seg-btn.active {
+    background: #ffff00;
+    border-color: #ffff00;
+    color: #000;
+    font-weight: 600;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+}
+
+.row input {
+    width: 34px;
+    height: 20px;
+    flex-shrink: 0;
+    accent-color: #ffff00;
+    cursor: pointer;
+}
+
+.hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    margin-top: 8px;
+    line-height: 1.35;
+}
+
+.hint:empty {
+    display: none;
+}
+
+.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
