@@ -268,7 +268,7 @@ async function handleDownloadPlaylistZip(payload, sender) {
         } catch (e) {
             failed++;
             const errMsg = (e && e.message) ? e.message : String(e);
-            console.error('Y-Music-Tools: playlist zip track failed', trackId, e);
+            console.error('YMX-tools: playlist zip track failed', trackId, e);
             sendProgress(t.title || '', { title: t.title || '', message: errMsg });
         }
     }

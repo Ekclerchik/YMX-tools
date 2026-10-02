@@ -666,7 +666,7 @@ function addTracksToPlaylist(playlist, trackIds, callback) {
             if (typeof result.revision === 'number') revision = result.revision;
             if (result.tracks) existingCount = result.tracks.length;
             else if (typeof result.trackCount === 'number') existingCount = result.trackCount;
-        } catch (e) { console.error('Y-Music-Tools: failed to read playlist data', e); }
+        } catch (e) { console.error('YMX-tools: failed to read playlist data', e); }
 
         var tracks = [];
         for (var i = 0; i < trackIds.length; i++) {
@@ -681,7 +681,7 @@ function addTracksToPlaylist(playlist, trackIds, callback) {
                 fireInfoSwal('\u0422\u0440\u0435\u043a\u0438 \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u0432 \u00ab' + playlist.title + '\u00bb');
                 if (callback) callback();
             } else {
-                console.error('Y-Music-Tools: addTracksToPlaylist failed', response);
+                console.error('YMX-tools: addTracksToPlaylist failed', response);
                 fireErrorSwal('\u041e\u0448\u0438\u0431\u043a\u0430 \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0438\u044f');
             }
         });

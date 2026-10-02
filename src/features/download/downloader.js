@@ -415,7 +415,7 @@ function onClickDownloadCurrent() {
             fireInfoSwal('\u0421\u043a\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044f: ' + filename);
         }).catch(function (e) {
             Swal.close();
-            console.error('Y-Music-Tools: download current failed', e);
+            console.error('YMX-tools: download current failed', e);
             fireErrorSwal('\u041e\u0448\u0438\u0431\u043a\u0430: ' + (e.message || '\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f'));
         });
     });
@@ -573,7 +573,7 @@ function downloadPlaylistZip(data) {
     }).catch(function (e) {
         session.active = false;
         if (Swal.isVisible()) Swal.close();
-        console.error('Y-Music-Tools: playlist zip failed', e);
+        console.error('YMX-tools: playlist zip failed', e);
         showZipSummary({ ok: false, cancelled: true, downloaded: session.done, failed: session.failed, error: (e && e.message) || '\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f' }, session);
     });
 }

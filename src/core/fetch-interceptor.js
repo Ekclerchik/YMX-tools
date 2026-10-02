@@ -151,7 +151,7 @@
                     for (var a = 0; a < seeds.length; a++) {
                         if (seeds[a] && seeds[a].track) accepted.push(seeds[a].track.title);
                     }
-                    console.log('[YMX-wave] session/new', {
+                    console.log('[YMX-tools/wave] session/new', {
                         isWave: isWave,
                         sessionId: json.radioSessionId,
                         seq0: desc,
@@ -184,11 +184,11 @@
                 try {
                     _uid = json.result.account.uid || json.account.uid || (json.result && json.result.uid) || null;
                 } catch (e) {}
-                if (!_uid) console.log('[ymt-wave] status resp: ' + JSON.stringify(json).slice(0, 300));
+                if (!_uid) console.log('[YMX-tools/wave] status resp: ' + JSON.stringify(json).slice(0, 300));
                 return _uid;
             })
             .catch(function (err) {
-                console.log('[ymt-wave] status failed: ' + (err && err.message));
+                console.log('[YMX-tools/wave] status failed: ' + (err && err.message));
                 return null;
             });
     }
@@ -240,7 +240,7 @@
         }, function (err) {
             _likesLoading = null;
             _likesFailTs = Date.now();
-            console.log('[ymt-wave] likes load failed: ' + (err && err.message));
+            console.log('[YMX-tools/wave] likes load failed: ' + (err && err.message));
             return null;
         });
         return _likesLoading;
@@ -475,7 +475,7 @@
                         var head = { type: 'track', liked: false, track: track };
                         if (!(keep[0] && String(keep[0].track && keep[0].track.id) === String(track.id))) {
                             keep.unshift(head);
-                            console.log('[YMX-wave] seed-first prepended: ' + (track.title || track.id));
+                            console.log('[YMX-tools/wave] seed-first prepended: ' + (track.title || track.id));
                         }
                     }
                     json.sequence = keep;
@@ -583,15 +583,15 @@
                                 var _rdr = input.body.getReader();
                                 _rdr.read().then(function (_r2) {
                                     var _txt = _r2 && _r2.value ? new TextDecoder().decode(_r2.value) : '';
-                                    console.log('[YMX-wave-req] session/new REQUEST BODY:', _txt.slice(0, 1000));
+                                    console.log('[YMX-tools/wave-req] session/new REQUEST BODY:', _txt.slice(0, 1000));
                                 }).catch(function () {});
                             }
                         } catch (e) { _inputInfo += '|err=' + e.message; }
                     }
                 }
-                console.log('[YMX-wave-req] session/new URL:', urlStr, '| body:', _reqBody, '| input:', _inputInfo);
+                console.log('[YMX-tools/wave-req] session/new URL:', urlStr, '| body:', _reqBody, '| input:', _inputInfo);
             } catch (e) {
-                console.log('[YMX-wave-req] session/new URL err:', urlStr);
+                console.log('[YMX-tools/wave-req] session/new URL err:', urlStr);
             }
             return origFetch.apply(this, arguments).then(function (response) {
                 if (!response || !response.ok) return response;

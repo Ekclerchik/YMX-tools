@@ -1,6 +1,6 @@
 {
-    "ext_name": { "message": "YMX Tools" },
-    "ext_short_name": { "message": "YMX Tools" },
+    "ext_name": { "message": "YMX-tools" },
+    "ext_short_name": { "message": "YMX-tools" },
     "ext_description": { "message": "Дополнительные возможности для сайта Яндекс Музыки: удобная работа с плейлистами, настройки волны и оформления" },
     "info_no_tracks": { "message": "Треков не найдено" }
 }

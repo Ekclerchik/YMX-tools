@@ -3,7 +3,7 @@ import os
 import shutil
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-ZIP = os.path.join(BASE, 'Y-Music-Tools.zip')
+ZIP = os.path.join(BASE, 'YMX-tools.zip')
 TEMP = r'C:\temp\yb_build'
 
 def clean(path):

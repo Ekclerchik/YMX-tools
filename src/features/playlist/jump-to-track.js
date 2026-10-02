@@ -6,7 +6,7 @@ var JUMP_TRACK_STYLE_ID = 'ymt-jump-style';
 
 function ensureJumpTrackStyle() {
     if (document.getElementById(JUMP_TRACK_STYLE_ID)) return;
-    console.log('[YMT] jump-to-track build: fullscreen-fix v2');
+    console.log('[YMX-tools] jump-to-track build: fullscreen-fix v2');
     var s = document.createElement('style');
     s.id = JUMP_TRACK_STYLE_ID;
     s.textContent = '@keyframes ymt-jump-pulse{0%{background:rgba(255,210,0,0.35)}100%{background:transparent}}.'
@@ -631,4 +631,4 @@ function cleanupSearchNav() {
     _searchNav.currentIndex = -1;
 }
 
-console.log('[YMT] jump-to-track build: fullscreen-fix v2');
+console.log('[YMX-tools] jump-to-track build: fullscreen-fix v2');

@@ -77,7 +77,7 @@
     ],
     "action": {
         "default_popup": "/src/popup/popup.html",
-        "default_title": "YMX Tools"
+        "default_title": "YMX-tools"
     },
     "background": {
         "scripts": ["/src/lib/browser-polyfill.min.js", "/src/background/background-fx.js", "/src/background/background-download.js", "/src/background/background-privacy.js"]

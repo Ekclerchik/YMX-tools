@@ -140,7 +140,7 @@ async function handleDownloadTrack(payload) {
                 const coverRes = await fetch(coverUrl);
                 if (coverRes.ok) coverBuffer = await coverRes.arrayBuffer();
             } catch (e) {
-                console.warn('Y-Music-Tools: cover download failed', e);
+                console.warn('YMX-tools: cover download failed', e);
             }
         }
 
@@ -161,7 +161,7 @@ async function handleDownloadTrack(payload) {
 
         return { ok: true, id: downloadId };
     } catch (err) {
-        console.error('Y-Music-Tools: download failed', err);
+        console.error('YMX-tools: download failed', err);
         return { ok: false, error: String((err && err.message) || err) };
     }
 }

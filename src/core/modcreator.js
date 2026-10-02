@@ -22,7 +22,7 @@ function findInsertionKey() {
 }
 
 function modifyPlaylistPage() {
-    console.log('[Y-Music-Tools] modifyPlaylistPage called, pathname:', location.pathname);
+    console.log('[YMX-tools] modifyPlaylistPage called, pathname:', location.pathname);
     isJumpTrackEnabled(function (enabled) {
         JUMP_TRACK_CURRENT_STATE = enabled;
         _ymtCachedPlaylistData = null;
@@ -39,7 +39,7 @@ function modifyPlaylistPage() {
 }
 
 function modifyWavePage() {
-    console.log('[Y-Music-Tools] modifyWavePage called');
+    console.log('[YMX-tools] modifyWavePage called');
     isDatesEnabled(function (enabledDates) {
         DATE_CURRENT_STATE = enabledDates;
         if (enabledDates) {

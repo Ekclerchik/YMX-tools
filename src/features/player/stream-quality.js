@@ -203,7 +203,7 @@ function applyStreamQuality(key, callback) {
     }
 
     if (written === 0) {
-        console.warn('[Y-Music-Tools] не удалось сохранить качество звука в хранилище сайта');
+        console.warn('[YMX-tools] не удалось сохранить качество звука в хранилище сайта');
         callback(false);
         return;
     }
