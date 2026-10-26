@@ -48,10 +48,11 @@ async function onContentMessage(message, sender, sendResponse) {
         return response || {};
     } else if (message.action === 'downloadTrack') {
         return await handleDownloadTrack(message.payload);
-    } else if (message.action === 'downloadPlaylistZip') {
-        return await handleDownloadPlaylistZip(message.payload, sender);
-    } else if (message.action === 'downloadPlaylistCancel') {
-        return handleDownloadPlaylistCancel(message.sessionId);
+    } else if (message.action === 'openZipJobTab') {
+        await browserAPI.tabs.create({ url: browserAPI.runtime.getURL('src/features/download/zipjob.html') });
+        return { success: true };
+    } else if (message.action === 'getZipTrackPayload') {
+        return await handleGetZipTrackPayload(message.payload);
     }
     return true;
 }
@@ -183,6 +184,12 @@ async function requestOfType(data) {
     }
 
     countRequest++;
+    let settled = false;
+    const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        data.callback(value);
+    };
     try {
         let options = { method: data.type, credentials: 'include' };
         if (data.type === 'POST') {
@@ -197,18 +204,20 @@ async function requestOfType(data) {
         const response = await fetch(data.url, options);
         if (response.status === 412) {
             console.error('Request error 412:', data.url);
+            settle({});
             return;
         }
         const text = await response.text();
         try {
             const json = JSON.parse(text);
-            data.callback(json);
+            settle(json);
         } catch (e) {
             console.warn('Non-JSON response for:', data.url, text.substring(0, 200));
-            data.callback({});
+            settle({});
         }
     } catch (e) {
         console.error('Request failed:', data.url, e);
+        settle({});
     } finally {
         countRequest--;
         if (pendingRequests.length > 0 && countRequest <= 100) {

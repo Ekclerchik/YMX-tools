@@ -49,15 +49,6 @@ function md5BG(str) {
     return out.map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
 }
 
-function crc32(bytes) {
-    let crc = 0xFFFFFFFF;
-    for (let i = 0; i < bytes.length; i++) {
-        crc ^= bytes[i];
-        for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
-    }
-    return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
 async function getTrackMetaBG(domain, trackId) {
     const response = await requestGET('https://api.music.yandex.' + domain + '/tracks/' + trackId);
     const result = response && response.result !== undefined ? response.result : response;
@@ -117,203 +108,39 @@ function buildTrackTagsBG(meta) {
     };
 }
 
-function sanitizeZipName(name) {
-    return String(name || 'track').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 150);
-}
+// Один трек для плейлистового архива: метаданные + mp3 + обложка + ID3.
+// Фон только собирает байты и отдаёт их вкладке; сам ZIP она собирает сама.
+async function handleGetZipTrackPayload(payload) {
+    const { domain, trackId, bitrate } = payload || {};
+    if (!domain || !trackId) return { error: 'Нет данных трека' };
 
-function isDownloadToFolderEnabled() {
+    const meta = await getTrackMetaBG(domain, trackId);
+    if (!meta || !meta.title) return { error: 'Не удалось получить данные трека' };
+
+    let info;
     try {
-        return localStorage.getItem('ymtDlFolder') === 'true';
+        info = await getBestDownloadUrlBG(domain, trackId, bitrate);
     } catch (e) {
-        return false;
+        return { error: (e && e.message) || String(e) };
     }
-}
+    const tags = buildTrackTagsBG(meta);
 
-function buildDownloadPath(fileName, folderTitle) {
-    if (!isDownloadToFolderEnabled()) return fileName;
-    var folder = sanitizeZipName(folderTitle || 'YMX');
-    if (!folder) return fileName;
-    return folder + '/' + fileName;
-}
+    const mp3Res = await fetch(info.url);
+    if (!mp3Res.ok) return { error: 'Сбой загрузки (' + mp3Res.status + ')' };
+    const mp3Buffer = await mp3Res.arrayBuffer();
 
-function dedupeZipName(name, used) {
-    if (!used.has(name)) { used.add(name); return name; }
-    const dot = name.lastIndexOf('.');
-    const base = dot > 0 ? name.slice(0, dot) : name;
-    const ext = dot > 0 ? name.slice(dot) : '';
-    let i = 1;
-    while (used.has(base + ' (' + i + ')' + ext)) i++;
-    const out = base + ' (' + i + ')' + ext;
-    used.add(out);
-    return out;
-}
-
-function buildZipEntry(fileName, dataArrayBuffer, localOffset) {
-    const name = new TextEncoder().encode(fileName);
-    const data = new Uint8Array(dataArrayBuffer);
-    const crc = crc32(data);
-    const size = data.length;
-
-    const local = new Uint8Array(30 + name.length);
-    const dv = new DataView(local.buffer);
-    dv.setUint32(0, 0x04034b50, true);
-    dv.setUint16(4, 20, true);
-    dv.setUint16(6, 0x0800, true);
-    dv.setUint16(8, 0, true);
-    dv.setUint16(10, 0, true);
-    dv.setUint16(12, 0, true);
-    dv.setUint32(14, crc, true);
-    dv.setUint32(18, size, true);
-    dv.setUint32(22, size, true);
-    dv.setUint16(26, name.length, true);
-    dv.setUint16(28, 0, true);
-    local.set(name, 30);
-
-    const central = new Uint8Array(46 + name.length);
-    const dv2 = new DataView(central.buffer);
-    dv2.setUint32(0, 0x02014b50, true);
-    dv2.setUint16(4, 20, true);
-    dv2.setUint16(6, 20, true);
-    dv2.setUint16(8, 0x0800, true);
-    dv2.setUint16(10, 0, true);
-    dv2.setUint16(12, 0, true);
-    dv2.setUint16(14, 0, true);
-    dv2.setUint32(16, crc, true);
-    dv2.setUint32(20, size, true);
-    dv2.setUint32(24, size, true);
-    dv2.setUint16(28, name.length, true);
-    dv2.setUint16(30, 0, true);
-    dv2.setUint16(32, 0, true);
-    dv2.setUint16(34, 0, true);
-    dv2.setUint16(36, 0, true);
-    dv2.setUint32(38, 0, true);
-    dv2.setUint32(42, localOffset, true);
-    central.set(name, 46);
-
-    return { local, data, central };
-}
-
-let activeZipSessionId = null;
-let zipCancelRequested = false;
-
-function handleDownloadPlaylistCancel(sessionId) {
-    if (activeZipSessionId && sessionId && activeZipSessionId === sessionId) {
-        zipCancelRequested = true;
-    }
-    return { success: true };
-}
-
-async function handleDownloadPlaylistZip(payload, sender) {
-    const { domain, playlistTitle, tracks, sessionId, bitrate } = payload || {};
-    const list = Array.isArray(tracks) ? tracks : [];
-    const total = list.length;
-    if (!domain || total === 0) return { ok: false, error: 'Нет данных плейлиста' };
-
-    activeZipSessionId = sessionId || String(Date.now());
-    zipCancelRequested = false;
-
-    const usedNames = new Set();
-    const zipParts = [];
-    const centralParts = [];
-    let localOffset = 0;
-    let done = 0, failed = 0;
-
-    const sendProgress = (currentTitle, lastError) => {
-        if (!sender || !sender.tab) return;
-        browserAPI.tabs.sendMessage(sender.tab.id, {
-            action: 'ymtDlProgress',
-            sessionId: activeZipSessionId,
-            done,
-            total,
-            failed,
-            currentTitle: currentTitle || '',
-            lastError: lastError || null,
-        }).catch(() => {});
-    };
-
-    for (let i = 0; i < total; i++) {
-        if (zipCancelRequested) break;
-        const t = list[i] || {};
-        const trackId = String(t.id);
-        sendProgress(t.title || '');
+    let coverBuffer = null;
+    if (tags.coverUrl) {
         try {
-            const meta = await getTrackMetaBG(domain, trackId);
-            if (!meta) throw new Error('Трек не найден');
-            const info = await getBestDownloadUrlBG(domain, trackId, bitrate);
-            const tags = buildTrackTagsBG(meta);
-
-            const mp3Res = await fetch(info.url);
-            if (!mp3Res.ok) throw new Error('Сбой загрузки (' + mp3Res.status + ')');
-            const mp3Buffer = await mp3Res.arrayBuffer();
-
-            let coverBuffer = null;
-            if (tags.coverUrl) {
-                try {
-                    const coverRes = await fetch(tags.coverUrl);
-                    if (coverRes.ok) coverBuffer = await coverRes.arrayBuffer();
-                } catch (e) {}
-            }
-
-            const id3Buffer = buildID3v2Tag(tags.id3, coverBuffer);
-            const combined = new Uint8Array(id3Buffer.byteLength + mp3Buffer.byteLength);
-            combined.set(new Uint8Array(id3Buffer), 0);
-            combined.set(new Uint8Array(mp3Buffer), id3Buffer.byteLength);
-
-            const fileName = dedupeZipName(sanitizeZipName(tags.fileName) + '.mp3', usedNames);
-            const entry = buildZipEntry(fileName, combined.buffer, localOffset);
-            zipParts.push(entry.local, entry.data);
-            centralParts.push(entry.central);
-            localOffset += entry.local.length + entry.data.length;
-            done++;
-        } catch (e) {
-            failed++;
-            const errMsg = (e && e.message) ? e.message : String(e);
-            console.error('YMX-tools: playlist zip track failed', trackId, e);
-            sendProgress(t.title || '', { title: t.title || '', message: errMsg });
-        }
+            const coverRes = await fetch(tags.coverUrl);
+            if (coverRes.ok) coverBuffer = await coverRes.arrayBuffer();
+        } catch (e) {}
     }
 
-    const cancelled = zipCancelRequested;
-    activeZipSessionId = null;
-    zipCancelRequested = false;
+    const id3Buffer = buildID3v2Tag(tags.id3, coverBuffer);
+    const combined = new Uint8Array(id3Buffer.byteLength + mp3Buffer.byteLength);
+    combined.set(new Uint8Array(id3Buffer), 0);
+    combined.set(new Uint8Array(mp3Buffer), id3Buffer.byteLength);
 
-    if (done === 0) {
-        return { ok: false, cancelled, error: cancelled ? 'Отменено' : 'Не удалось скачать ни одного трека' };
-    }
-
-    const centralOffset = localOffset;
-    let cdLength = 0;
-    for (const c of centralParts) { zipParts.push(c); cdLength += c.length; }
-
-    const eocd = new Uint8Array(22);
-    const dve = new DataView(eocd.buffer);
-    dve.setUint32(0, 0x06054b50, true);
-    dve.setUint16(4, 0, true);
-    dve.setUint16(6, 0, true);
-    dve.setUint16(8, done, true);
-    dve.setUint16(10, done, true);
-    dve.setUint32(12, cdLength, true);
-    dve.setUint32(16, centralOffset, true);
-    dve.setUint16(20, 0, true);
-    zipParts.push(eocd);
-
-    const blob = new Blob(zipParts, { type: 'application/zip' });
-    const url = URL.createObjectURL(blob);
-    const zipName = buildDownloadPath(sanitizeZipName(playlistTitle || 'playlist') + '.zip', playlistTitle);
-
-    let downloadId;
-    try {
-        downloadId = await browserAPI.downloads.download({
-            url,
-            filename: zipName,
-            conflictAction: 'uniquify',
-            saveAs: !!payload.saveAs,
-        });
-    } catch (e) {
-        URL.revokeObjectURL(url);
-        throw e;
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-
-    return { ok: true, downloaded: done, failed, zipName, cancelled };
+    return { fileName: tags.fileName, data: combined.buffer };
 }

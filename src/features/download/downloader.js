@@ -22,18 +22,6 @@ function ensureDownloadStyle() {
         '.ymt-dl-list::-webkit-scrollbar { width: 4px; }',
         '.ymt-dl-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }',
         '.ymt-dl-empty { padding: 20px; text-align: center; color: rgba(255,255,255,0.4); font-size: 13px; }',
-        '.ymt-dl-zip-bar { height: 10px; border-radius: 5px; background: rgba(255,255,255,0.12); overflow: hidden; margin-bottom: 10px; }',
-        '.ymt-dl-zip-fill { height: 100%; width: 0; border-radius: 5px; background: linear-gradient(90deg, #ffdd00, #ffff00); transition: width 0.25s ease; }',
-        '.ymt-dl-zip-meta { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; color: #fff; }',
-        '.ymt-dl-zip-err { color: #ff8a80; }',
-        '.ymt-dl-zip-current { font-size: 13px; color: rgba(255,255,255,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }',
-        '.ymt-dl-zip-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,0,0.3); border-top-color: #ffff00; border-radius: 50%; animation: ymt-dl-spin 0.8s linear infinite; flex-shrink: 0; }',
-        '@keyframes ymt-dl-spin { to { transform: rotate(360deg); } }',
-        '.ymt-dl-zip-errors { font-size: 12px; color: #ff8a80; max-height: 90px; overflow-y: auto; }',
-        '.ymt-dl-zip-errline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }',
-        '.ymt-dl-summary-err-title { margin-top: 8px; color: #ff8a80; font-size: 13px; text-align: left; }',
-        '.ymt-dl-summary-err-list { text-align: left; max-height: 150px; overflow-y: auto; margin-top: 4px; font-size: 12px; color: #ff8a80; }',
-        '.ymt-dl-summary-err { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }',
     ].join('\n');
     document.head.appendChild(s);
 }
@@ -538,141 +526,24 @@ function downloadPlaylistZip(data) {
         var t = data.tracks[i];
         tracks.push({ id: t.id, title: t.title || '' });
     }
-    var domain = location.hostname.split('.')[2];
-    var title = data.title || 'playlist';
-    var total = tracks.length;
-    var sessionId = 'zip' + Date.now() + Math.floor(Math.random() * 1e6);
 
-    var session = DOWNLOAD_STATE.zipUi = {
-        sessionId: sessionId,
-        total: total,
-        done: 0,
-        failed: 0,
-        errors: [],
-        currentTitle: '',
-        active: true,
+    // Скачивание идёт в отдельной вкладке расширения, а не в фоне: фон в MV3
+    // могут выгрузить на длинном задании, и тогда всё умирает. Вкладка живёт,
+    // пока её не закроют, плюс там своя кнопка остановки и Esc.
+    var payload = {
+        domain: location.hostname.split('.')[2],
+        playlistTitle: data.title || 'playlist',
+        tracks: tracks,
+        bitrate: getSelectedBitrate(),
+        saveAs: isDownloadSaveAsEnabled(),
+        folder: isDownloadToFolderEnabled() ? sanitizeDownloadFileName(getCurrentPlaylistTitle()) : null,
     };
 
-    Swal.fire({
-        title: '\u0421\u043a\u0430\u0447\u0438\u0432\u0430\u043d\u0438\u0435 \u043f\u043b\u0435\u0439\u043b\u0438\u0441\u0442\u0430',
-        html: '<div id="ymt-dl-zip-ui">' + zipUiMarkup() + '</div>'
-            + '<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,0.35)">Esc \u2014 \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c</div>',
-        showConfirmButton: false,
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        didOpen: function () { renderZipUi(); },
-    });
-
-    API.runtime.sendMessage({
-        action: 'downloadPlaylistZip',
-        payload: { domain: domain, playlistTitle: title, tracks: tracks, sessionId: sessionId, bitrate: getSelectedBitrate(), saveAs: isDownloadSaveAsEnabled() },
-    }).then(function (resp) {
-        session.active = false;
-        if (Swal.isVisible()) Swal.close();
-        showZipSummary(resp, session);
+    API.storage.local.set({ ymtZipJob: payload }).then(function () {
+        // tabs недоступен из контент-скрипта, вкладку открывает фон.
+        return API.runtime.sendMessage({ action: 'openZipJobTab' });
     }).catch(function (e) {
-        session.active = false;
-        if (Swal.isVisible()) Swal.close();
         console.error('YMX-tools: playlist zip failed', e);
-        showZipSummary({ ok: false, cancelled: true, downloaded: session.done, failed: session.failed, error: (e && e.message) || '\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f' }, session);
+        fireErrorSwal('\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443: ' + ((e && e.message) || ''));
     });
 }
-
-function zipUiMarkup() {
-    return '<div class="ymt-dl-zip-bar"><div class="ymt-dl-zip-fill"></div></div>'
-        + '<div class="ymt-dl-zip-meta"><span class="ymt-dl-zip-count">\u0421\u043a\u0430\u0447\u0430\u043d\u043e: 0 \u0438\u0437 0</span><span class="ymt-dl-zip-err">\u041e\u0448\u0438\u0431\u043a\u0438: 0</span></div>'
-        + '<div class="ymt-dl-zip-current"><span class="ymt-dl-zip-spinner"></span><span>\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430...</span></div>'
-        + '<div class="ymt-dl-zip-errors"></div>';
-}
-
-function renderZipUi() {
-    var s = DOWNLOAD_STATE.zipUi;
-    var el = document.getElementById('ymt-dl-zip-ui');
-    if (!el || !s) return;
-
-    var pct = s.total > 0 ? Math.round((s.done / s.total) * 100) : 0;
-    var fill = el.querySelector('.ymt-dl-zip-fill');
-    if (fill) fill.style.width = pct + '%';
-
-    var countEl = el.querySelector('.ymt-dl-zip-count');
-    if (countEl) countEl.textContent = '\u0421\u043a\u0430\u0447\u0430\u043d\u043e: ' + s.done + ' \u0438\u0437 ' + s.total;
-
-    var errEl = el.querySelector('.ymt-dl-zip-err');
-    if (errEl) errEl.textContent = '\u041e\u0448\u0438\u0431\u043a\u0438: ' + s.failed;
-
-    var curEl = el.querySelector('.ymt-dl-zip-current');
-    if (curEl) {
-        curEl.innerHTML = s.currentTitle
-            ? '<span class="ymt-dl-zip-spinner"></span><span style="overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(s.currentTitle) + '</span>'
-            : '<span class="ymt-dl-zip-spinner"></span><span style="color:rgba(255,255,255,0.4)">\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430...</span>';
-    }
-
-    var errsEl = el.querySelector('.ymt-dl-zip-errors');
-    if (errsEl) {
-        var list = s.errors.slice(-5);
-        errsEl.innerHTML = list.length ? list.map(function (e) {
-            return '<div class="ymt-dl-zip-errline">' + escapeHtml(e.title || '') + ' \u2014 ' + escapeHtml(e.message) + '</div>';
-        }).join('') : '';
-    }
-}
-
-function showZipSummary(resp, session) {
-    var lines = [];
-    if (resp && resp.error && !resp.cancelled) {
-        lines.push('\u041e\u0448\u0438\u0431\u043a\u0430: <b>' + escapeHtml(resp.error) + '</b>');
-    }
-    lines.push('\u0421\u043a\u0430\u0447\u0430\u043d\u043e: <b>' + (resp && resp.downloaded !== undefined ? resp.downloaded : session.done) + '</b> \u0438\u0437 ' + session.total);
-    if (resp && resp.failed > 0) {
-        lines.push('\u041e\u0448\u0438\u0431\u043e\u043a: <b>' + resp.failed + '</b>');
-    }
-    if (resp && resp.cancelled) {
-        lines.push('<span style="color:#ffb300">\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u043e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u0435\u043c (Esc)</span>');
-    }
-    if (resp && resp.zipName) {
-        lines.push('\u0424\u0430\u0439\u043b: <b>' + escapeHtml(resp.zipName) + '</b>');
-    }
-    if (session.errors.length > 0) {
-        var max = Math.min(session.errors.length, 15);
-        var errHtml = '';
-        for (var i = 0; i < max; i++) {
-            var e = session.errors[i];
-            errHtml += '<div class="ymt-dl-summary-err">' + escapeHtml(e.title || '\u0422\u0440\u0435\u043a') + ' \u2014 ' + escapeHtml(e.message) + '</div>';
-        }
-        if (session.errors.length > max) {
-            errHtml += '<div class="ymt-dl-summary-err">...\u0438 \u0435\u0449\u0451 ' + (session.errors.length - max) + '</div>';
-        }
-        lines.push('<div class="ymt-dl-summary-err-title">\u041e\u0448\u0438\u0431\u043a\u0438:</div><div class="ymt-dl-summary-err-list">' + errHtml + '</div>');
-    }
-    Swal.fire({
-        title: '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0430',
-        html: lines.join('<br>'),
-        confirmButtonText: '\u041e\u041a',
-        width: 480,
-    });
-}
-
-document.addEventListener('keydown', function (e) {
-    var s = DOWNLOAD_STATE.zipUi;
-    if (e.key === 'Escape' && s && s.active) {
-        e.preventDefault();
-        e.stopPropagation();
-        s.active = false;
-        s.currentTitle = '';
-        renderZipUi();
-        API.runtime.sendMessage({ action: 'downloadPlaylistCancel', sessionId: s.sessionId }).catch(function () {});
-    }
-}, true);
-
-API.runtime.onMessage.addListener(function (msg) {
-    if (msg && msg.action === 'ymtDlProgress') {
-        var s = DOWNLOAD_STATE.zipUi;
-        if (!s || !s.active || (s.sessionId && msg.sessionId && s.sessionId !== msg.sessionId)) return false;
-        s.total = msg.total;
-        s.done = msg.done;
-        s.failed = msg.failed;
-        s.currentTitle = msg.currentTitle || '';
-        if (msg.lastError) s.errors.push(msg.lastError);
-        renderZipUi();
-    }
-    return false;
-});

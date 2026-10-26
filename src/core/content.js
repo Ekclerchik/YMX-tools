@@ -212,7 +212,12 @@ injectVibeResetButtonHide();
 injectVibeWordsHide();
 initUrlObserver();
 syncTelemetryState();
-fillContent('complete');
+fillContent();
+
+// The SPA renders the playlist header late and re-renders it when data
+// arrives, dropping our nodes with it. A cheap watchdog is more reliable
+// than one-shot observers with a small retry budget.
+setInterval(ensurePageSetup, 1000);
 
 var _lastPlaylistMeta = null;
 
@@ -419,62 +424,45 @@ function onUrlChange() {
             (function(){var e=document.querySelector('.ymt-jump-arrowbar');if(e)e.style.display='none';var w=document.querySelector('.ymt-jump-wrap');if(w)w.style.display='none';document.querySelectorAll('[class*="SearchPlaylist"]').forEach(function(el){el.style.display='';})})();
             _ymtCachedPlaylistData = null;
             document.documentElement.removeAttribute('data-ymt-playlist');
-            fillContent('complete');
+            fillContent();
         }
     }, 300);
 }
 
-function fillContent(message) {
-    let response = getAvailableModify();
-    if (!response.available) return;
-
-    if (message == 'complete') {
-        waitForElementWithObserver(response.key, response.method);
-    } else {
-        waitElementByKey(response.key, response.method);
-    }
+function fillContent() {
+    ensurePageSetup();
 }
 
-function waitForElementWithObserver(key, callback) {
-    if (findElement(key)) {
-        callback(key);
+// Page (type + URL) whose features are already initialized.
+var _pageSetupKey = null;
+
+function ensurePageSetup() {
+    var pageType = getPageType();
+    if (!pageType) {
+        _pageSetupKey = null;
         return;
     }
 
-    let tryCount = 0;
-    let observer = new MutationObserver(function () {
-        if (findElement(key)) {
-            observer.disconnect();
-            callback(key);
-            return;
+    var key = pageType + '|' + location.pathname + location.search;
+    if (_pageSetupKey === key) {
+        // Yandex Music re-renders the header and can remove our menu with it.
+        if (pageType === 'playlist' &&
+            !document.getElementById(MENU_PLAYLIST.id) &&
+            getAvailablePosition()) {
+            addMenuPlaylist();
         }
-        if (++tryCount > 15) {
-            observer.disconnect();
-        }
-    });
+        return;
+    }
 
-    observer.observe(document.body || document.documentElement, {
-        childList: true,
-        subtree: true,
-    });
-}
+    // Nothing rendered to attach to yet — the watchdog will retry.
+    if (!findInsertionKey() && !findFallbackPosition()) return;
 
-function waitElementByKey(key, callback) {
-    let tryCount = 0;
-    let timerId = setInterval(function () {
-        if (findElement(key)) {
-            clearInterval(timerId);
-            callback(key);
-        }
-        if (++tryCount > 10) {
-            clearInterval(timerId);
-        }
-    }, 1000);
-}
-
-function findElement(key) {
-    if (typeof key === 'function') return key();
-    return document.querySelector(key);
+    if (pageType === 'wave') {
+        modifyWavePage();
+    } else {
+        modifyPlaylistPage();
+    }
+    _pageSetupKey = key;
 }
 
 var _trackDateTimerId = null;

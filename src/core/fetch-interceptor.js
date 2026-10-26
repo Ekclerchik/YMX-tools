@@ -27,6 +27,569 @@
     var _likesFailTs = 0;
     var LIKES_RETRY_MS = 30 * 1000;
 
+    // --- «Моя волна по треку»: затравка должна играть с той же секунды ---
+    // Плеер не держит <audio> в DOM (элемент создаётся в JS), поэтому поймать
+    // его можно только хуком play(). Позицию снимаем до того, как плеер
+    // получит новую очередь, и возвращаем её, если он начал затравку с нуля.
+    var RESUME_WINDOW_MS = 60000;
+    var RESUME_MAX_TRIES = 20;
+    var _resumePending = null;
+    var _resumeTimer = null;
+    var _resumeSnapshot = null;
+    var _resumeLastApply = 0;
+    var _wavePre = null;
+    var _waveT0 = 0;
+    var _guards = [];
+    var GUARD_MS = 2500;
+
+    (function hookMediaElement() {
+        try {
+            if (!HTMLMediaElement || !HTMLMediaElement.prototype.play) {
+                console.log('[YMX-tools/wave-resume] HTMLMediaElement недоступен');
+                return;
+            }
+            // Сайт подменяет play() своим методом, поэтому ловим сам элемент
+            // сразу при создании, установке src, load() и play(). Элементы
+            // копим в window, чтобы их видела любая копия скрипта.
+            var proto = HTMLMediaElement.prototype;
+
+            function note(el) {
+                try {
+                    var L = window.__ymtMediaList || (window.__ymtMediaList = []);
+                    if (L.indexOf(el) === -1) {
+                        L.push(el);
+                        if (L.length > 20) L.shift();
+                        if (_wavePre && Date.now() < _wavePre.until) {
+                            console.log('[YMX-tools/wave-resume] элемент в окне затравки: t=' +
+                                (+el.currentTime).toFixed(1) + ' d=' +
+                                (isFinite(el.duration) ? (+el.duration).toFixed(1) : 'NaN') +
+                                ' ' + String(el.src || el.srcObject || '').slice(0, 40));
+                        }
+                    }
+                    window.__ymtLastMedia = el;
+                } catch (e) {}
+            }
+            window.__ymtNoteMedia = note;
+
+            var origPlay = proto.play;
+            proto.play = function () {
+                note(this);
+                window.__ymtPlayCount = (window.__ymtPlayCount || 0) + 1;
+                var snap = _resumePending || armedWavePos();
+                if (armedWavePos()) {
+                    var md = mediaMeta();
+                    console.log('[YMX-tools/wave-resume] play(): t=' + (+this.currentTime).toFixed(1) +
+                        ' d=' + (isFinite(this.duration) ? (+this.duration).toFixed(1) : 'NaN') +
+                        ' трек=' + (md ? md.title : 'нет'));
+                }
+                if (snap) preseekEl(this, snap);
+                return origPlay.apply(this, arguments);
+            };
+
+            var origLoad = proto.load;
+            if (typeof origLoad === 'function') {
+                proto.load = function () {
+                    note(this);
+                    try {
+                        var snap = _resumePending || armedWavePos();
+                        if (snap) preseekEl(this, snap);
+                    } catch (e) {}
+                    var g = guardFor(this);
+                    if (g) {
+                        g.reloaded++;
+                        if (g.reloaded <= 5) {
+                            console.log('[YMX-tools/wave-resume] плеер вызвал load() на перемотанном элементе');
+                        }
+                    }
+                    return origLoad.apply(this, arguments);
+                };
+            }
+
+            var srcDescr = Object.getOwnPropertyDescriptor(proto, 'src');
+            if (srcDescr && srcDescr.set) {
+                Object.defineProperty(proto, 'src', {
+                    configurable: true,
+                    enumerable: !!srcDescr.enumerable,
+                    get: function () { return srcDescr.get.call(this); },
+                    set: function (v) {
+                        note(this);
+                        window.__ymtSrcCount = (window.__ymtSrcCount || 0) + 1;
+                        // Новый источник сбрасывает позицию — даём шанс
+                        // поставить её заново до следующего play().
+                        try { if (this.__ymtPreseek) this.__ymtPreseek = 0; } catch (e) {}
+                        var snap = _resumePending || armedWavePos();
+                        if (snap) preseekEl(this, snap);
+                        var g = guardFor(this);
+                        if (g) {
+                            g.reloaded++;
+                            if (g.reloaded <= 5) {
+                                console.log('[YMX-tools/wave-resume] плеер сменил src на перемотанном элементе: ' +
+                                    String(v).slice(0, 60));
+                            }
+                        }
+                        return srcDescr.set.call(this, v);
+                    },
+                });
+            }
+
+            // Часть плееров ставит источник и автозапуск атрибутами, а не
+            // свойствами, и вообще не зовёт play().
+            var soDescr = Object.getOwnPropertyDescriptor(proto, 'srcObject');
+            if (soDescr && soDescr.set) {
+                Object.defineProperty(proto, 'srcObject', {
+                    configurable: true,
+                    enumerable: !!soDescr.enumerable,
+                    get: function () { return soDescr.get.call(this); },
+                    set: function (v) {
+                        note(this);
+                        try { if (this.__ymtPreseek) this.__ymtPreseek = 0; } catch (e) {}
+                        var snap = _resumePending || armedWavePos();
+                        if (snap) preseekEl(this, snap);
+                        return soDescr.set.call(this, v);
+                    },
+                });
+            }
+
+            var apDescr = Object.getOwnPropertyDescriptor(proto, 'autoplay');
+            if (apDescr && apDescr.set) {
+                Object.defineProperty(proto, 'autoplay', {
+                    configurable: true,
+                    enumerable: !!apDescr.enumerable,
+                    get: function () { return apDescr.get.call(this); },
+                    set: function (v) {
+                        try {
+                            var snap = _resumePending || armedWavePos();
+                            if (v && snap) { note(this); preseekEl(this, snap); }
+                        } catch (e) {}
+                        return apDescr.set.call(this, v);
+                    },
+                });
+            }
+
+            var origSetAttr = Element.prototype.setAttribute;
+            if (typeof origSetAttr === 'function') {
+                Element.prototype.setAttribute = function (name, value) {
+                    try {
+                        if (this instanceof HTMLMediaElement) {
+                            note(this);
+                            var n = String(name).toLowerCase();
+                            if (n === 'src' || n === 'autoplay') {
+                                window.__ymtSetAttrCount = (window.__ymtSetAttrCount || 0) + 1;
+                                if (n === 'src') { try { this.__ymtPreseek = 0; } catch (e) {} }
+                                var snap = _resumePending || armedWavePos();
+                                if (snap) preseekEl(this, snap);
+                            }
+                        }
+                    } catch (e) {}
+                    return origSetAttr.apply(this, arguments);
+                };
+            }
+
+            // Плеер возвращает позицию на ноль сам, поэтому в течение пары
+            // секунд после возврата отбиваем такие сбросы.
+            var ctDescr = Object.getOwnPropertyDescriptor(proto, 'currentTime');
+            if (ctDescr && ctDescr.set) {
+                Object.defineProperty(proto, 'currentTime', {
+                    configurable: true,
+                    enumerable: !!ctDescr.enumerable,
+                    get: function () { return ctDescr.get.call(this); },
+                    set: function (v) {
+                        try {
+                            var now = Date.now();
+                            for (var i = 0; i < _guards.length; i++) {
+                                var g = _guards[i];
+                                if (g.el === this && now < g.until && isFinite(v) && v < g.pos - 1 &&
+                                    sameMediaTrack(g.meta, mediaMeta())) {
+                                    g.blocked++;
+                                    if (g.blocked <= 6) {
+                                        console.log('[YMX-tools/wave-resume] отбил сброс позиции на ' + v + waveMs());
+                                    }
+                                    return;
+                                }
+                            }
+                        } catch (e) {}
+                        return ctDescr.set.call(this, v);
+                    },
+                });
+            }
+
+            var origCreate = document.createElement;
+            document.createElement = function (tag) {
+                var el = origCreate.apply(this, arguments);
+                try {
+                    var t = String(tag).toLowerCase();
+                    if (t === 'audio' || t === 'video') {
+                        note(el);
+                        window.__ymtCreateCount = (window.__ymtCreateCount || 0) + 1;
+                    }
+                } catch (e) {}
+                return el;
+            };
+
+            var OrigAudio = window.Audio;
+            if (typeof OrigAudio === 'function' && window.Proxy) {
+                window.Audio = new Proxy(OrigAudio, {
+                    construct: function (target, args) {
+                        var el = Reflect.construct(target, args);
+                        note(el);
+                        window.__ymtCreateCount = (window.__ymtCreateCount || 0) + 1;
+                        return el;
+                    },
+                });
+            }
+
+            console.log('[YMX-tools/wave-resume] перехват медиаэлементов установлен');
+        } catch (e) {
+            console.log('[YMX-tools/wave-resume] перехват не установился: ' + (e && e.message));
+        }
+    })();
+
+    // Плеер может перезапустить затравку прямо в обработчике клика, ещё до
+    // запроса. Ловим клик по кнопке «Моя волна по треку» в фазе перехвата —
+    // то есть раньше самого сайта.
+    (function hookWaveButton() {
+        try {
+            document.addEventListener('click', function (ev) {
+                try {
+                    var t = ev.target;
+                    if (!t || !t.tagName || t === document.body || t === document.documentElement) return;
+                    var txt = '';
+                    for (var i = 0; i < 5 && t && txt.length < 300; i++) {
+                        txt += ' ' + (t.textContent || '');
+                        t = t.parentNode;
+                    }
+                    if (!/по\s+треку/i.test(txt)) return;
+                    var last = window.__ymtLastPos;
+                    if (!last || Date.now() - last.at > 1500) return;
+                    armWavePre('клик');
+                } catch (e) {}
+            }, true);
+        } catch (e) {}
+    })();
+
+    // Сбросы позиции, которые плеер делает сам, отбиваем: помним, какие
+    // элементы мы перемотали и куда.
+    function guardElement(el, pos, meta) {
+        var now = Date.now();
+        var keep = [];
+        for (var i = 0; i < _guards.length; i++) {
+            if (_guards[i].until > now && _guards[i].el !== el) keep.push(_guards[i]);
+        }
+        keep.push({ el: el, pos: pos, meta: meta, until: now + GUARD_MS, blocked: 0, reloaded: 0 });
+        if (keep.length > 6) keep.shift();
+        _guards = keep;
+    }
+
+    function guardFor(el) {
+        var now = Date.now();
+        for (var i = 0; i < _guards.length; i++) {
+            if (_guards[i].el === el && _guards[i].until + 3000 > now) return _guards[i];
+        }
+        return null;
+    }
+
+    // Ставим позицию «до старта»: если успеть до play() (или хотя бы до
+    // загрузки метаданных), начала трека вообще не слышно.
+    function armedWavePos() {
+        if (_wavePre && Date.now() < _wavePre.until) return _wavePre;
+        return null;
+    }
+
+    function sinceWave() {
+        if (!_waveT0) return null;
+        var dt = Date.now() - _waveT0;
+        return (dt >= 0 && dt < 30000) ? dt : null;
+    }
+
+    function waveMs() {
+        var dt = sinceWave();
+        return dt === null ? '' : ' (+' + dt + ' мс от клика)';
+    }
+
+    function logPreseekSkip(why) {
+        console.log('[YMX-tools/wave-resume] до запуска не поставил: ' + why);
+    }
+
+    // Заготовка позиции: нужна, чтобы успеть до того, как плеер запустит
+    // затравку (сайт делает это ещё до ответа session/new, а иногда и до
+    // самого запроса — прямо в обработчике клика).
+    function armWavePre(reason, snapshot) {
+        var snap = snapshot || snapshotPosition();
+        if (!snap || snap.error) return null;
+        if (reason === 'клик' || !_waveT0 || Date.now() - _waveT0 > 10000) _waveT0 = Date.now();
+        _wavePre = {
+            pos: snap.pos,
+            dur: snap.dur || null,
+            meta: snap.meta || null,
+            until: Date.now() + 5000,
+        };
+        console.log('[YMX-tools/wave-resume] позиция на старте (' + reason + '): ' + _wavePre.pos.toFixed(1) + ' c');
+        return _wavePre;
+    }
+
+    function preseekEl(el, snap) {
+        try {
+            var trace = (_wavePre === snap);
+            if (!sameMediaTrack(snap.meta, mediaMeta())) {
+                if (trace) logPreseekSkip('другой трек в метаданных: ' + JSON.stringify(mediaMeta()));
+                return;
+            }
+            if (!isFinite(el.currentTime) || el.currentTime >= snap.pos - 1) {
+                if (trace) logPreseekSkip('элемент уже на ' + el.currentTime);
+                return;
+            }
+            if (snap.dur && isFinite(el.duration) && Math.abs(el.duration - snap.dur) > 1.5) {
+                if (trace) logPreseekSkip('длительность ' + el.duration + ' вместо ' + snap.dur);
+                return;
+            }
+            var first = el.__ymtPreseek !== snap.pos;
+            el.__ymtPreseek = snap.pos;
+            guardElement(el, snap.pos, snap.meta);
+            if (!el.__ymtMetaHooked) {
+                el.__ymtMetaHooked = true;
+                el.addEventListener('loadedmetadata', function () {
+                    try {
+                        var s = _resumePending || armedWavePos();
+                        if (!s || el.__ymtPreseek !== s.pos) return;
+                        if (!sameMediaTrack(s.meta, mediaMeta())) return;
+                        if (isFinite(el.currentTime) && el.currentTime >= s.pos - 1) return;
+                        if (s.dur && isFinite(el.duration) && Math.abs(el.duration - s.dur) > 1.5) return;
+                        guardElement(el, s.pos, s.meta);
+                        el.currentTime = s.pos;
+                        console.log('[YMX-tools/wave-resume] позиция выставлена после метаданных: ' + s.pos.toFixed(1) + ' c' + waveMs());
+                    } catch (e) {}
+                });
+                el.addEventListener('playing', function () {
+                    try {
+                        if (sinceWave() === null) return;
+                        console.log('[YMX-tools/wave-resume] звук пошёл: t=' + (+el.currentTime).toFixed(1) +
+                            ' d=' + (isFinite(el.duration) ? (+el.duration).toFixed(1) : 'NaN') + waveMs());
+                    } catch (e) {}
+                });
+            }
+            el.currentTime = snap.pos;
+            if (first) {
+                console.log('[YMX-tools/wave-resume] позиция выставлена до запуска: ' + snap.pos.toFixed(1) + ' c' + waveMs());
+            }
+        } catch (e) {}
+    }
+
+    function mediaMeta() {
+        try {
+            var md = navigator.mediaSession && navigator.mediaSession.metadata;
+            if (!md) return null;
+            return { title: String(md.title || ''), artist: String(md.artist || '') };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function sameMediaTrack(a, b) {
+        // Нет метаданных — не мешаем вернуть позицию.
+        if (!a || !b) return true;
+        return String(a.title).trim().toLowerCase() === String(b.title).trim().toLowerCase() &&
+            String(a.artist).trim().toLowerCase() === String(b.artist).trim().toLowerCase();
+    }
+
+    // Плеер молниеносно сносит текущий элемент при нажатии, поэтому позицию
+    // запоминаем постоянно, пока что-то играет, а не в момент нажатия.
+    function findPlayingMedia() {
+        var L = window.__ymtMediaList || [];
+        var best = null;
+        for (var i = 0; i < L.length; i++) {
+            var el = L[i];
+            try {
+                if (!el || el.paused) continue;
+                if (!isFinite(el.currentTime) || el.currentTime <= 1) continue;
+                if (!best || el.currentTime > best.currentTime) best = el;
+            } catch (e) {}
+        }
+        return best;
+    }
+
+    setInterval(function () {
+        window.__ymtTick = (window.__ymtTick || 0) + 1;
+        try {
+            var el = findPlayingMedia();
+            window.__ymtTickSee = el ? +el.currentTime.toFixed(1) :
+                ('нет играющего, элементов ' + (window.__ymtMediaList || []).length);
+            if (!el) return;
+            if (!window.__ymtLastPos) {
+                console.log('[YMX-tools/wave-resume] слежение включилось: ' + el.currentTime.toFixed(1) + ' c');
+            }
+            window.__ymtLastPos = {
+                pos: el.currentTime,
+                dur: isFinite(el.duration) ? el.duration : null,
+                meta: mediaMeta(),
+                at: Date.now(),
+            };
+        } catch (e) {
+            window.__ymtTickErr = String(e && e.message);
+        }
+    }, 250);
+
+    function mediaDump() {
+        var L = window.__ymtMediaList || [];
+        var parts = [];
+        for (var i = 0; i < L.length; i++) {
+            if (i >= 6) { parts.push('...'); break; }
+            var el = L[i];
+            try {
+                parts.push('#' + i + '{t=' + (+el.currentTime).toFixed(1) +
+                    ',d=' + (isFinite(el.duration) ? (+el.duration).toFixed(1) : 'NaN') +
+                    ',rs=' + el.readyState + ',p=' + el.paused + '}');
+            } catch (e) {
+                parts.push('#' + i + '{err}');
+            }
+        }
+        return '[' + L.length + ' элем.: ' + parts.join(' ') + ']';
+    }
+
+    // Плеер создаёт отдельный медиаэлемент на трек, поэтому нужен именно играющий.
+    function pickPlayingMedia() {
+        var L = window.__ymtMediaList || [];
+        var best = null;
+        for (var i = 0; i < L.length; i++) {
+            var el = L[i];
+            try {
+                if (!el) continue;
+                // У MSE длительность может быть 0 или NaN, поэтому смотрим
+                // на паузу и позицию, а не на duration.
+                if (!el.paused && isFinite(el.currentTime) && el.currentTime > 1) return el;
+                if (el.readyState >= 1 && (!best || el.currentTime > best.currentTime)) best = el;
+            } catch (e) {}
+        }
+        return best;
+    }
+
+    function counters() {
+        return 'создано=' + (window.__ymtCreateCount || 0) +
+            ', src=' + (window.__ymtSrcCount || 0) +
+            ', play=' + (window.__ymtPlayCount || 0);
+    }
+
+    function snapshotPosition() {
+        try {
+            var tracked = window.__ymtLastPos;
+            if (tracked && tracked.pos > 1 && Date.now() - tracked.at < 10000) {
+                return {
+                    pos: tracked.pos,
+                    dur: tracked.dur || null,
+                    meta: tracked.meta,
+                    tries: 0,
+                    age: (Date.now() - tracked.at) / 1000,
+                    dump: mediaDump(),
+                };
+            }
+            var el = pickPlayingMedia();
+            if (!el) {
+                return { error: 'играющий медиаэлемент не найден (' + counters() + ') ' + mediaDump() };
+            }
+            var pos = el.currentTime;
+            if (!isFinite(pos) || pos <= 1) {
+                return {
+                    error: 'currentTime=' + pos + ', paused=' + el.paused +
+                        ', readyState=' + el.readyState + ', duration=' + el.duration + ' ' + mediaDump(),
+                };
+            }
+            return {
+                pos: pos,
+                dur: isFinite(el.duration) ? el.duration : null,
+                meta: mediaMeta(),
+                tries: 0,
+                dump: mediaDump(),
+            };
+        } catch (e) {
+            return { error: 'ошибка: ' + (e && e.message) };
+        }
+    }
+
+    function armResume(snapshot, seedId) {
+        if (!snapshot) return;
+        if (snapshot.error) {
+            console.log('[YMX-tools/wave-resume] позиция не снята: ' + snapshot.error);
+            return;
+        }
+        if (_resumePending === snapshot) return;
+        if (_resumePending && Math.abs(_resumePending.pos - snapshot.pos) < 5) return;
+        _resumePending = snapshot;
+        _wavePre = null;
+        console.log('[YMX-tools/wave-resume] позиция до волны: ' + snapshot.pos.toFixed(1) +
+            ' c' + (snapshot.age !== undefined ? ' (замер ' + snapshot.age.toFixed(1) + ' c назад)' : '') +
+            ' (затравка ' + seedId + ', играет ' + ((snapshot.meta && snapshot.meta.title) || 'неизвестно') + ') ' +
+            (snapshot.dump || ''));
+        if (_resumeTimer) clearInterval(_resumeTimer);
+        _resumeTimer = setInterval(tryResume, 100);
+        setTimeout(function () {
+            if (_resumePending === snapshot) stopResume('окно истекло');
+        }, RESUME_WINDOW_MS);
+    }
+
+    function stopResume(reason) {
+        if (_resumeTimer) clearInterval(_resumeTimer);
+        _resumeTimer = null;
+        if (_resumePending) console.log('[YMX-tools/wave-resume] стоп: ' + reason);
+        _resumePending = null;
+    }
+
+    function tryResume() {
+        var snap = _resumePending;
+        if (!snap) return;
+        if (!sameMediaTrack(snap.meta, mediaMeta())) {
+            stopResume('трек сменился');
+            return;
+        }
+        var cands = [];
+        var L = window.__ymtMediaList || [];
+        for (var i = 0; i < L.length; i++) {
+            var el = L[i];
+            try {
+                if (!el) continue;
+                // Уже играет примерно там, где надо? Значит, перемотка удалась.
+                if (!el.paused && isFinite(el.currentTime) && Math.abs(el.currentTime - snap.pos) < 3) {
+                    snap.ok = (snap.ok || 0) + 1;
+                    if (snap.ok >= 3) {
+                        stopResume('готово: играет с ' + el.currentTime.toFixed(1) + ' c' + waveMs());
+                        return;
+                    }
+                    continue;
+                }
+                snap.ok = 0;
+                if (el.readyState < 1) continue;
+                if (!isFinite(el.currentTime) || el.currentTime >= snap.pos - 1) continue;
+                // Свой трек узнаём по длительности: у чужого (предзагрузка) другая.
+                if (snap.dur && isFinite(el.duration) && Math.abs(el.duration - snap.dur) > 1.5) continue;
+                // У MSE длительность бывает 0 или NaN — тогда доверяем позиции.
+                if (isFinite(el.duration) && el.duration > 1 && el.duration < snap.pos) continue;
+                cands.push(el);
+            } catch (e) {}
+        }
+        if (!cands.length) return;
+        // Перемотка занимает время: не дёргаем её повторно раньше, чем
+        // плеер успеет применить предыдущую.
+        if (Date.now() - _resumeLastApply < 500) return;
+        if (snap.tries >= RESUME_MAX_TRIES) {
+            stopResume('не удалось удержать позицию ' + mediaDump());
+            return;
+        }
+        snap.tries++;
+        _resumeLastApply = Date.now();
+        var done = [];
+        for (var c = 0; c < cands.length; c++) {
+            var t = cands[c];
+            try {
+                guardElement(t, snap.pos, snap.meta);
+                var was = t.currentTime;
+                t.currentTime = snap.pos;
+                done.push('#' + L.indexOf(t) + ' c ' + was.toFixed(1) + ' (p=' + t.paused + ')');
+            } catch (e) {
+                console.log('[YMX-tools/wave-resume] сбой возврата: ' + (e && e.message));
+            }
+        }
+        console.log('[YMX-tools/wave-resume] вернул ' + snap.pos.toFixed(1) + ' c (' +
+            (done.join(', ') || 'некому') + ')' + waveMs() + (snap.tries === 1 ? ' ' + mediaDump() : ''));
+    }
+
     function apiBase() {
         try {
             return 'https://api.music.yandex.' + location.hostname.split('.')[2];
@@ -165,11 +728,13 @@
             return {
                 isWave: isWave,
                 sessionId: json.radioSessionId || null,
+                seedId: findSeedTrackId(json),
             };
         } catch (e) {
             return {
                 isWave: false,
                 sessionId: null,
+                seedId: null,
             };
         }
     }
@@ -465,7 +1030,10 @@
         var keptSeed = false;
         if (tag === 'first') {
             var seedId = findSeedTrackId(json);
-            if (seedId) keptSeed = moveSeedTrackFirst(keep, seedId);
+            if (seedId) {
+                keptSeed = moveSeedTrackFirst(keep, seedId);
+                if (keptSeed) armResume(_resumeSnapshot, seedId);
+            }
         }
         if (tag === 'first' && !keptSeed) {
             var seedId2 = findSeedTrackId(json);
@@ -477,6 +1045,7 @@
                             keep.unshift(head);
                             console.log('[YMX-tools/wave] seed-first prepended: ' + (track.title || track.id));
                         }
+                        armResume(_resumeSnapshot, seedId2);
                     }
                     json.sequence = keep;
                     return JSON.stringify(json);
@@ -563,6 +1132,13 @@
         }
 
         if (isSessionNew) {
+            // Позицию «до нажатия» снимаем сразу — до того, как плеер получит
+            // новую очередь и, возможно, перезапустит затравку с нуля.
+            _resumeSnapshot = snapshotPosition();
+            // Сайт запускает затравку раньше, чем приходит ответ, поэтому
+            // запоминаем позицию уже на запросе: новые элементы успеют
+            // получить её ещё до play().
+            armWavePre('запрос', _resumeSnapshot);
             try {
                 var _reqBody = null;
                 if (typeof init !== 'undefined' && init && init.body) {
@@ -603,6 +1179,7 @@
                             localStorage.setItem(WAVE_SESSION_KEY, info.sessionId || '');
                         } catch (e) {}
                     }
+                    if (info.isWave && info.seedId) armResume(_resumeSnapshot, info.seedId);
                     if (!waveFilterEnabled() && !antiSkipEnabled()) return response;
                     return ensureLikedSet().then(function () {
                         return Promise.resolve(filterWaveResponse(text, 'first')).then(function (out) {
