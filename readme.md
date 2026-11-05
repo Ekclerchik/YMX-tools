@@ -5,6 +5,7 @@
 ![Интерфейс](image/screenshot.png)
 
 ## Возможности
+**Расширение в Firefox**: https://addons.mozilla.org/ru/firefox/addon/ymx-tools/
 
 **Скачивание**
 
