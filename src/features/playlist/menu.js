@@ -124,6 +124,20 @@ function buildMenuPlaylist() {
                         defaultState: isAntiSkipEnabled(),
                         handler: onClickAntiSkipToggle,
                     },
+                    {
+                        title: 'Стеклянная тема (волна)',
+                        titleId: 'ymt-glass-title',
+                        toggle: true,
+                        defaultState: isGlassEnabled(),
+                        handler: onClickGlassToggle,
+                    },
+                    {
+                        title: 'Свой фон волны',
+                        titleId: 'ymt-wave-bg-title',
+                        toggle: true,
+                        defaultState: isWaveBgEnabled(),
+                        handler: onClickWaveBgToggle,
+                    },
                 ].concat(getStreamQualityMenuItems(), getAntiSkipHoursMenuItems(), getWaveStatsMenuItems()),
             },
             {

@@ -54,10 +54,43 @@
             <span>Не повторять недавние</span>
             <input type="checkbox" data-key="antiSkip">
         </label>
+        <label class="row" id="row-glass">
+            <span>Стеклянная тема (волна)</span>
+            <input type="checkbox" data-key="glass">
+        </label>
         <label class="row" id="row-telemetry">
             <span>Блокировать телеметрию</span>
             <input type="checkbox" data-key="telemetry">
         </label>
+    </div>
+
+    <div class="block">
+        <div class="label">Фон волны</div>
+        <label class="row" id="row-wavebg">
+            <span>Свой фон волны</span>
+            <input type="checkbox" data-key="waveBg">
+        </label>
+        <div id="wavebg-options">
+            <div class="row">
+                <span>Фигура</span>
+                <select id="wavebg-shape">
+                    <option value="none">Без фигуры</option>
+                    <option value="waves">Волны</option>
+                    <option value="blobs">Пузыри</option>
+                    <option value="contours">Контуры</option>
+                    <option value="dots">Точки</option>
+                    <option value="grid">Сетка</option>
+                </select>
+            </div>
+            <div class="row">
+                <span>Цвет</span>
+                <input type="color" id="wavebg-color">
+            </div>
+            <label class="row">
+                <span>Скрыть анимацию</span>
+                <input type="checkbox" data-key="waveBgHideAnim">
+            </label>
+        </div>
     </div>
 </div>
 

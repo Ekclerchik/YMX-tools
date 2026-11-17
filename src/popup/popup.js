@@ -72,6 +72,19 @@ function renderSettings(state) {
         var key = inputs[j].getAttribute('data-key');
         inputs[j].checked = !!state[key];
     }
+
+    renderWaveBgOptions(state);
+}
+
+function renderWaveBgOptions(state) {
+    var box = $('wavebg-options');
+    if (box) box.classList.toggle('disabled', !state.waveBg);
+
+    var shape = $('wavebg-shape');
+    if (shape) shape.value = state.waveBgShape || 'waves';
+
+    var color = $('wavebg-color');
+    if (color) color.value = state.waveBgColor || '#0b1220';
 }
 
 function setQualityHint(text, isError) {
@@ -128,6 +141,9 @@ function bindToggles(tabId) {
         dates: 'ymtPopupSetDates',
         waveFilter: 'ymtPopupSetWaveFilter',
         antiSkip: 'ymtPopupSetAntiSkip',
+        glass: 'ymtPopupSetGlass',
+        waveBg: 'ymtPopupSetWaveBg',
+        waveBgHideAnim: 'ymtPopupSetWaveBgHideAnim',
         telemetry: 'ymtPopupSetTelemetry',
     };
     var toggles = document.querySelectorAll('#wrap input[data-key]');
@@ -142,6 +158,22 @@ function bindToggles(tabId) {
                 }).catch(function () {});
             });
         })(toggles[i]);
+    }
+}
+
+function bindWaveBg(tabId) {
+    var shape = $('wavebg-shape');
+    if (shape) {
+        shape.addEventListener('change', function () {
+            sendToTab(tabId, { action: 'ymtPopupSetWaveBgShape', value: shape.value }).catch(function () {});
+        });
+    }
+
+    var color = $('wavebg-color');
+    if (color) {
+        color.addEventListener('input', function () {
+            sendToTab(tabId, { action: 'ymtPopupSetWaveBgColor', value: color.value }).catch(function () {});
+        });
     }
 }
 
@@ -178,6 +210,7 @@ function init() {
         var tabId = tab.id;
         bindQuality(tabId);
         bindToggles(tabId);
+        bindWaveBg(tabId);
         bindButtons(tabId);
         startPolling(tabId);
     });
