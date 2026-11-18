@@ -42,6 +42,83 @@
     var _guards = [];
     var GUARD_MS = 2500;
 
+    // --- Громкость: мост между UI расширения и медиаэлементами ---
+    // Плеер не держит <audio> в DOM, поэтому громкость задаём прямо
+    // медиаэлементам и перехватываем setter volume, чтобы сайт не сбрасывал
+    // выставленное значение. Желаемое значение приходит из content-скрипта
+    // через атрибут <html data-ymt-volume> = процент «экспоненциальной»
+    // громкости сайта (та же шкала, что у ползунка CHANGE_VOLUME_SLIDER).
+    // Отсутствие атрибута или отрицательное значение = не вмешиваться.
+    (function hookVolume() {
+        var VOL_ATTR = 'data-ymt-volume';
+        var _desired = null; // линейная громкость 0..1 или null (прозрачный режим)
+
+        // Шкала сайта: exponentVolume e -> линейная громкость 0.01^(1-e),
+        // значения <= 0.01 сайт трактует как тишину.
+        function percentToVolume(raw) {
+            var p = parseFloat(raw);
+            if (!isFinite(p) || p < 0) return null;
+            if (p > 100) p = 100;
+            var v = Math.pow(0.01, 1 - (p / 100));
+            return v > 0.01 ? v : 0;
+        }
+
+        function readAttr() {
+            try {
+                var raw = document.documentElement.getAttribute(VOL_ATTR);
+                if (raw === null || raw === '') return null;
+                return percentToVolume(raw);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function apply(el) {
+            if (_desired === null || !el) return;
+            try { if (el.volume !== _desired) el.volume = _desired; } catch (e) {}
+        }
+        window.__ymtApplyVolume = apply;
+
+        function applyAll() {
+            var L = window.__ymtMediaList || [];
+            for (var i = 0; i < L.length; i++) apply(L[i]);
+            apply(window.__ymtLastMedia);
+        }
+        window.__ymtApplyVolumeAll = applyAll;
+
+        // Перехват setter'а: сайт выставляет громкость при создании/смене
+        // элемента — принудительно возвращаем нашу.
+        try {
+            var d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume');
+            if (d && d.set) {
+                Object.defineProperty(HTMLMediaElement.prototype, 'volume', {
+                    configurable: true,
+                    enumerable: !!d.enumerable,
+                    get: function () { return d.get.call(this); },
+                    set: function (v) {
+                        if (_desired !== null) v = _desired;
+                        return d.set.call(this, v);
+                    },
+                });
+            }
+        } catch (e) {}
+
+        // Мост: content-скрипт меняет атрибут на <html>.
+        try {
+            if (document.documentElement) {
+                var mo = new MutationObserver(function () {
+                    var next = readAttr();
+                    if (next === _desired) return;
+                    _desired = next;
+                    applyAll();
+                });
+                mo.observe(document.documentElement, { attributes: true, attributeFilter: [VOL_ATTR] });
+            }
+        } catch (e) {}
+
+        _desired = readAttr();
+    })();
+
     (function hookMediaElement() {
         try {
             if (!HTMLMediaElement || !HTMLMediaElement.prototype.play) {
@@ -67,6 +144,7 @@
                         }
                     }
                     window.__ymtLastMedia = el;
+                    if (window.__ymtApplyVolume) window.__ymtApplyVolume(el);
                 } catch (e) {}
             }
             window.__ymtNoteMedia = note;

@@ -197,12 +197,10 @@ function buildPopupState() {
         path: location.pathname,
         dates: !!DATE_CURRENT_STATE,
         waveFilter: isWaveFilterEnabled(),
+        coverFullscreen: isCoverFullscreenEnabled(),
+        coverSize: getCoverSize(),
+        textScale: getTextScale(),
         antiSkip: isAntiSkipEnabled(),
-        glass: isGlassEnabled(),
-        waveBg: isWaveBgEnabled(),
-        waveBgShape: getWaveBgShape(),
-        waveBgColor: getWaveBgColor(),
-        waveBgHideAnim: isWaveBgHideAnim(),
         telemetry: isTelemetryBlocked(),
         antiSkipHours: getAntiSkipHours(),
         waveStats: getWaveStats(),
@@ -217,36 +215,24 @@ function setPopupWaveFilter(val) {
     setMenuItemToggle('ymt-wave-filter-title', !!val);
 }
 
+function setPopupCoverFullscreen(val) {
+    setCoverFullscreenEnabled(!!val);
+    setMenuItemToggle('ymt-cover-fs-title', !!val);
+}
+
+function setPopupCoverSize(px) {
+    setCoverSize(px);
+    injectAlbumCoverTweak();
+}
+
+function setPopupTextScale(pct) {
+    setTextScale(pct);
+    injectVibeArtistLineStyle();
+}
+
 function setPopupAntiSkip(val) {
     setAntiSkipEnabled(!!val);
     setMenuItemToggle('ymt-anti-skip-title', !!val);
-}
-
-function setPopupGlass(val) {
-    setGlassEnabled(!!val);
-    setMenuItemToggle('ymt-glass-title', !!val);
-    injectVibeGlass();
-}
-
-function setPopupWaveBg(val) {
-    setWaveBgEnabled(!!val);
-    setMenuItemToggle('ymt-wave-bg-title', !!val);
-    injectWaveBackground();
-}
-
-function setPopupWaveBgShape(val) {
-    setWaveBgShape(val);
-    injectWaveBackground();
-}
-
-function setPopupWaveBgColor(val) {
-    setWaveBgColor(val);
-    injectWaveBackground();
-}
-
-function setPopupWaveBgHideAnim(val) {
-    setWaveBgHideAnim(!!val);
-    injectWaveBackground();
 }
 
 API.runtime.onMessage.addListener(function (msg) {
@@ -270,28 +256,20 @@ API.runtime.onMessage.addListener(function (msg) {
             setPopupWaveFilter(!!msg.value);
             return Promise.resolve(buildPopupState());
         }
+        if (msg.action === 'ymtPopupSetCoverFullscreen') {
+            setPopupCoverFullscreen(!!msg.value);
+            return Promise.resolve(buildPopupState());
+        }
+        if (msg.action === 'ymtPopupSetCoverSize') {
+            setPopupCoverSize(msg.value);
+            return Promise.resolve(buildPopupState());
+        }
+        if (msg.action === 'ymtPopupSetTextScale') {
+            setPopupTextScale(msg.value);
+            return Promise.resolve(buildPopupState());
+        }
         if (msg.action === 'ymtPopupSetAntiSkip') {
             setPopupAntiSkip(!!msg.value);
-            return Promise.resolve(buildPopupState());
-        }
-        if (msg.action === 'ymtPopupSetGlass') {
-            setPopupGlass(!!msg.value);
-            return Promise.resolve(buildPopupState());
-        }
-        if (msg.action === 'ymtPopupSetWaveBg') {
-            setPopupWaveBg(!!msg.value);
-            return Promise.resolve(buildPopupState());
-        }
-        if (msg.action === 'ymtPopupSetWaveBgShape') {
-            setPopupWaveBgShape(msg.value);
-            return Promise.resolve(buildPopupState());
-        }
-        if (msg.action === 'ymtPopupSetWaveBgColor') {
-            setPopupWaveBgColor(msg.value);
-            return Promise.resolve(buildPopupState());
-        }
-        if (msg.action === 'ymtPopupSetWaveBgHideAnim') {
-            setPopupWaveBgHideAnim(!!msg.value);
             return Promise.resolve(buildPopupState());
         }
         if (msg.action === 'ymtPopupSetTelemetry') {

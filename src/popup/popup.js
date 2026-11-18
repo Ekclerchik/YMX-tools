@@ -37,6 +37,10 @@ function renderNowPlaying(state) {
         artist.classList.toggle('hidden', !track.artist);
         var cover = $('track-cover');
         cover.style.backgroundImage = track.coverUrl ? 'url("' + track.coverUrl + '")' : '';
+        var previewCover = $('preview-cover');
+        if (previewCover) {
+            previewCover.style.backgroundImage = track.coverUrl ? 'url("' + track.coverUrl + '")' : '';
+        }
         btnCurrent.disabled = !(track.id || track.title);
     } else {
         $('track-title').textContent = 'Сейчас ничего не играет';
@@ -44,6 +48,8 @@ function renderNowPlaying(state) {
         emptyArtist.textContent = 'Включите трек на странице';
         emptyArtist.classList.remove('hidden');
         $('track-cover').style.backgroundImage = '';
+        var previewCoverEmpty = $('preview-cover');
+        if (previewCoverEmpty) previewCoverEmpty.style.backgroundImage = '';
         btnCurrent.disabled = true;
     }
 
@@ -73,18 +79,50 @@ function renderSettings(state) {
         inputs[j].checked = !!state[key];
     }
 
-    renderWaveBgOptions(state);
+    var coverSize = state.coverSize || 256;
+    var textScale = state.textScale || 300;
+    syncPlayerUI(coverSize, textScale);
 }
 
-function renderWaveBgOptions(state) {
-    var box = $('wavebg-options');
-    if (box) box.classList.toggle('disabled', !state.waveBg);
+// The wave cover is 256px and its title ~120px - far too large for a 340px
+// popup, so the preview is the same layout shrunk by a fixed factor. Keeping
+// one factor preserves the real proportions between cover and text.
+var PREVIEW_SCALE = 0.22;
+var COVER_SIZE_MIN = 96;
+var COVER_SIZE_MAX = 512;
+var TEXT_SCALE_MIN = 100;
+var TEXT_SCALE_MAX = 600;
 
-    var shape = $('wavebg-shape');
-    if (shape) shape.value = state.waveBgShape || 'waves';
+function clampNum(value, min, max, fallback) {
+    var n = parseInt(value, 10);
+    if (isNaN(n)) return fallback;
+    if (n < min) return min;
+    if (n > max) return max;
+    return n;
+}
 
-    var color = $('wavebg-color');
-    if (color) color.value = state.waveBgColor || '#0b1220';
+function renderPlayerPreview(coverSize, textScale) {
+    var cover = Math.round(coverSize * PREVIEW_SCALE);
+    var title = Math.max(9, Math.round(40 * (textScale / 100) * PREVIEW_SCALE));
+    var artist = Math.max(7, Math.round(20 * (textScale / 100) * PREVIEW_SCALE));
+
+    var coverEl = $('preview-cover');
+    if (coverEl) {
+        coverEl.style.width = cover + 'px';
+        coverEl.style.height = cover + 'px';
+    }
+    var titleEl = $('preview-title');
+    if (titleEl) titleEl.style.fontSize = title + 'px';
+    var artistEl = $('preview-artist');
+    if (artistEl) artistEl.style.fontSize = artist + 'px';
+}
+
+function syncPlayerUI(coverSize, textScale) {
+    $('cover-size').value = coverSize;
+    $('text-scale').value = textScale;
+    $('cover-size-val').value = coverSize;
+    $('text-scale-val').value = textScale;
+    renderPlayerPreview(coverSize, textScale);
 }
 
 function setQualityHint(text, isError) {
@@ -140,10 +178,8 @@ function bindToggles(tabId) {
     var map = {
         dates: 'ymtPopupSetDates',
         waveFilter: 'ymtPopupSetWaveFilter',
+        coverFullscreen: 'ymtPopupSetCoverFullscreen',
         antiSkip: 'ymtPopupSetAntiSkip',
-        glass: 'ymtPopupSetGlass',
-        waveBg: 'ymtPopupSetWaveBg',
-        waveBgHideAnim: 'ymtPopupSetWaveBgHideAnim',
         telemetry: 'ymtPopupSetTelemetry',
     };
     var toggles = document.querySelectorAll('#wrap input[data-key]');
@@ -161,20 +197,72 @@ function bindToggles(tabId) {
     }
 }
 
-function bindWaveBg(tabId) {
-    var shape = $('wavebg-shape');
-    if (shape) {
-        shape.addEventListener('change', function () {
-            sendToTab(tabId, { action: 'ymtPopupSetWaveBgShape', value: shape.value }).catch(function () {});
-        });
+function bindSliders(tabId) {
+    var coverSlider = $('cover-size');
+    var textSlider = $('text-scale');
+    var coverVal = $('cover-size-val');
+    var textVal = $('text-scale-val');
+    var timer = null;
+
+    function push() {
+        var coverSize = clampNum(coverSlider.value, COVER_SIZE_MIN, COVER_SIZE_MAX, 256);
+        var textScale = clampNum(textSlider.value, TEXT_SCALE_MIN, TEXT_SCALE_MAX, 300);
+        // Debounce the page update so dragging / typing does not spam the tab.
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+            sendToTab(tabId, { action: 'ymtPopupSetCoverSize', value: coverSize }).catch(function () {});
+            sendToTab(tabId, { action: 'ymtPopupSetTextScale', value: textScale }).catch(function () {});
+        }, 120);
     }
 
-    var color = $('wavebg-color');
-    if (color) {
-        color.addEventListener('input', function () {
-            sendToTab(tabId, { action: 'ymtPopupSetWaveBgColor', value: color.value }).catch(function () {});
-        });
+    function fromSliders() {
+        var coverSize = clampNum(coverSlider.value, COVER_SIZE_MIN, COVER_SIZE_MAX, 256);
+        var textScale = clampNum(textSlider.value, TEXT_SCALE_MIN, TEXT_SCALE_MAX, 300);
+        coverVal.value = coverSize;
+        textVal.value = textScale;
+        renderPlayerPreview(coverSize, textScale);
+        push();
     }
+
+    function fromValues() {
+        // Digits only, and let the user clear the field to retype.
+        var coverRaw = coverVal.value.replace(/\D+/g, '');
+        if (coverRaw !== coverVal.value) coverVal.value = coverRaw;
+        var textRaw = textVal.value.replace(/\D+/g, '');
+        if (textRaw !== textVal.value) textVal.value = textRaw;
+        if (coverRaw === '' || textRaw === '') return;
+
+        var coverSize = clampNum(coverRaw, COVER_SIZE_MIN, COVER_SIZE_MAX, 256);
+        var textScale = clampNum(textRaw, TEXT_SCALE_MIN, TEXT_SCALE_MAX, 300);
+        coverSlider.value = coverSize;
+        textSlider.value = textScale;
+        renderPlayerPreview(coverSize, textScale);
+        push();
+    }
+
+    function commitValues() {
+        var coverSize = clampNum(coverVal.value, COVER_SIZE_MIN, COVER_SIZE_MAX, 256);
+        var textScale = clampNum(textVal.value, TEXT_SCALE_MIN, TEXT_SCALE_MAX, 300);
+        coverSlider.value = coverSize;
+        textSlider.value = textScale;
+        coverVal.value = coverSize;
+        textVal.value = textScale;
+        renderPlayerPreview(coverSize, textScale);
+        push();
+    }
+
+    function commitOnEnter(e) {
+        if (e.key === 'Enter') e.target.blur();
+    }
+
+    coverSlider.addEventListener('input', fromSliders);
+    textSlider.addEventListener('input', fromSliders);
+    coverVal.addEventListener('input', fromValues);
+    textVal.addEventListener('input', fromValues);
+    coverVal.addEventListener('change', commitValues);
+    textVal.addEventListener('change', commitValues);
+    coverVal.addEventListener('keydown', commitOnEnter);
+    textVal.addEventListener('keydown', commitOnEnter);
 }
 
 function bindButtons(tabId) {
@@ -210,7 +298,7 @@ function init() {
         var tabId = tab.id;
         bindQuality(tabId);
         bindToggles(tabId);
-        bindWaveBg(tabId);
+        bindSliders(tabId);
         bindButtons(tabId);
         startPolling(tabId);
     });

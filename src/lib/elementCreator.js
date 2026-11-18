@@ -119,9 +119,18 @@ function createSliderMenuItem(item) {
         if (v === null) return;
         commit(v);
     });
+    // The value is editable by hand: digits only. Block other printable keys
+    // and strip anything that arrives by paste / autocomplete / IME.
+    num.addEventListener('keydown', function (e) {
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !/[0-9]/.test(e.key)) {
+            e.preventDefault();
+        }
+    });
     num.addEventListener('input', function () {
-        if (num.value === '' || num.value === '-') return;
-        var v = ymtClampNum(num.value, min, hardMax);
+        var digits = num.value.replace(/[^0-9]/g, '');
+        if (digits !== num.value) num.value = digits;
+        if (digits === '') return;
+        var v = ymtClampNum(digits, min, hardMax);
         if (v === null) return;
         current = v;
         readout.textContent = format(v);
@@ -131,6 +140,12 @@ function createSliderMenuItem(item) {
         var v = ymtClampNum(num.value, min, hardMax);
         if (v === null) v = current;
         commit(v);
+    });
+    // Clicking the readout next to the label jumps into the number field.
+    readout.style.cursor = 'text';
+    readout.addEventListener('click', function () {
+        num.focus();
+        num.select();
     });
 
     render(current);

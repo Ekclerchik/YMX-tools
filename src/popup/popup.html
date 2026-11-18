@@ -41,6 +41,25 @@
     </div>
 
     <div class="block">
+        <div class="label">Плеер</div>
+        <div class="slider-row">
+            <span>Размер обложки</span>
+            <span class="slider-num"><input class="slider-val" id="cover-size-val" type="text" inputmode="numeric" value="256"><span class="slider-unit">px</span></span>
+        </div>
+        <input type="range" class="slider" id="cover-size" min="96" max="512" step="8" value="256">
+        <div class="slider-row">
+            <span>Размер текста</span>
+            <span class="slider-num"><input class="slider-val" id="text-scale-val" type="text" inputmode="numeric" value="300"><span class="slider-unit">%</span></span>
+        </div>
+        <input type="range" class="slider" id="text-scale" min="100" max="600" step="10" value="300">
+        <div class="preview" id="player-preview">
+            <div class="preview-cover" id="preview-cover"></div>
+            <div class="preview-title" id="preview-title">Название трека</div>
+            <div class="preview-artist" id="preview-artist">Исполнитель</div>
+        </div>
+    </div>
+
+    <div class="block">
         <div class="label">Настройки</div>
         <label class="row" id="row-dates">
             <span>Даты треков</span>
@@ -50,47 +69,18 @@
             <span>Скрыть лайки в волне</span>
             <input type="checkbox" data-key="waveFilter">
         </label>
+        <label class="row" id="row-cover-fs">
+            <span>Обложка открывает полный экран</span>
+            <input type="checkbox" data-key="coverFullscreen">
+        </label>
         <label class="row" id="row-anti">
             <span>Не повторять недавние</span>
             <input type="checkbox" data-key="antiSkip">
-        </label>
-        <label class="row" id="row-glass">
-            <span>Стеклянная тема (волна)</span>
-            <input type="checkbox" data-key="glass">
         </label>
         <label class="row" id="row-telemetry">
             <span>Блокировать телеметрию</span>
             <input type="checkbox" data-key="telemetry">
         </label>
-    </div>
-
-    <div class="block">
-        <div class="label">Фон волны</div>
-        <label class="row" id="row-wavebg">
-            <span>Свой фон волны</span>
-            <input type="checkbox" data-key="waveBg">
-        </label>
-        <div id="wavebg-options">
-            <div class="row">
-                <span>Фигура</span>
-                <select id="wavebg-shape">
-                    <option value="none">Без фигуры</option>
-                    <option value="waves">Волны</option>
-                    <option value="blobs">Пузыри</option>
-                    <option value="contours">Контуры</option>
-                    <option value="dots">Точки</option>
-                    <option value="grid">Сетка</option>
-                </select>
-            </div>
-            <div class="row">
-                <span>Цвет</span>
-                <input type="color" id="wavebg-color">
-            </div>
-            <label class="row">
-                <span>Скрыть анимацию</span>
-                <input type="checkbox" data-key="waveBgHideAnim">
-            </label>
-        </div>
     </div>
 </div>
 

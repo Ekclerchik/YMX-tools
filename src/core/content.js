@@ -3,6 +3,14 @@ var DATE_CURRENT_STATE = true;
 
 var WAVE_FILTER_KEY = 'ymtWaveFilterLiked';
 var ANTISKIP_KEY = 'ymtAntiSkip';
+var COVER_FULLSCREEN_KEY = 'ymtCoverFullscreen';
+var COVER_SIZE_KEY = 'ymtCoverSize';
+var TEXT_SCALE_KEY = 'ymtTextScale';
+
+// Wave player sizing (the "Плеер" popup block). The cover used to be a fixed
+// 256px and the text a fixed x3; both are user-tunable now.
+var COVER_SIZE_DEFAULT = 256;
+var TEXT_SCALE_DEFAULT = 300;
 
 var TELEMETRY_CURRENT_STATE = true;
 
@@ -81,73 +89,87 @@ function onClickAntiSkipToggle() {
     location.reload();
 }
 
-var GLASS_KEY = 'ymtGlassTheme';
-
-function isGlassEnabled() {
-    // Default OFF. It used to be on, but the frost is the most likely cause of
-    // the browser slowdown the user hit, so it is now opt-in until we confirm
-    // it is smooth on their machine.
-    return localStorage.getItem(GLASS_KEY) === 'true';
+function isCoverFullscreenEnabled() {
+    return localStorage.getItem(COVER_FULLSCREEN_KEY) !== 'false';
 }
 
-function setGlassEnabled(val) {
-    localStorage.setItem(GLASS_KEY, val ? 'true' : 'false');
+function setCoverFullscreenEnabled(val) {
+    localStorage.setItem(COVER_FULLSCREEN_KEY, val ? 'true' : 'false');
 }
 
-function onClickGlassToggle() {
-    var next = !isGlassEnabled();
-    setGlassEnabled(next);
-    setMenuItemToggle('ymt-glass-title', next);
-    injectVibeGlass();
+function onClickCoverFullscreenToggle() {
+    var next = !isCoverFullscreenEnabled();
+    setCoverFullscreenEnabled(next);
+    setMenuItemToggle('ymt-cover-fs-title', next);
 }
 
-var WAVE_BG_KEY = 'ymtWaveBg';
-var WAVE_BG_SHAPE_KEY = 'ymtWaveBgShape';
-var WAVE_BG_COLOR_KEY = 'ymtWaveBgColor';
-var WAVE_BG_HIDE_ANIM_KEY = 'ymtWaveBgHideAnim';
-
-var WAVE_BG_DEFAULT_COLOR = '#0b1220';
-var WAVE_BG_DEFAULT_SHAPE = 'waves';
-
-function isWaveBgEnabled() {
-    return localStorage.getItem(WAVE_BG_KEY) === 'true';
+function normalizeCoverSize(value) {
+    var val = parseInt(value, 10);
+    if (isNaN(val)) return COVER_SIZE_DEFAULT;
+    if (val < 96) return 96;
+    if (val > 512) return 512;
+    return val;
 }
 
-function setWaveBgEnabled(val) {
-    localStorage.setItem(WAVE_BG_KEY, val ? 'true' : 'false');
+function getCoverSize() {
+    return normalizeCoverSize(localStorage.getItem(COVER_SIZE_KEY));
 }
 
-function getWaveBgShape() {
-    var val = localStorage.getItem(WAVE_BG_SHAPE_KEY);
-    return (val && Object.prototype.hasOwnProperty.call(WAVE_BG_SHAPES, val)) ? val : WAVE_BG_DEFAULT_SHAPE;
+function setCoverSize(px) {
+    localStorage.setItem(COVER_SIZE_KEY, String(normalizeCoverSize(px)));
 }
 
-function setWaveBgShape(val) {
-    if (Object.prototype.hasOwnProperty.call(WAVE_BG_SHAPES, val)) localStorage.setItem(WAVE_BG_SHAPE_KEY, val);
+function normalizeTextScale(value) {
+    var val = parseInt(value, 10);
+    if (isNaN(val)) return TEXT_SCALE_DEFAULT;
+    if (val < 100) return 100;
+    if (val > 600) return 600;
+    return val;
 }
 
-function getWaveBgColor() {
-    var val = localStorage.getItem(WAVE_BG_COLOR_KEY);
-    return /^#[0-9a-f]{6}$/i.test(val || '') ? val : WAVE_BG_DEFAULT_COLOR;
+function getTextScale() {
+    return normalizeTextScale(localStorage.getItem(TEXT_SCALE_KEY));
 }
 
-function setWaveBgColor(val) {
-    if (/^#[0-9a-f]{6}$/i.test(val || '')) localStorage.setItem(WAVE_BG_COLOR_KEY, val);
+function setTextScale(pct) {
+    localStorage.setItem(TEXT_SCALE_KEY, String(normalizeTextScale(pct)));
 }
 
-function isWaveBgHideAnim() {
-    return localStorage.getItem(WAVE_BG_HIDE_ANIM_KEY) === 'true';
+function openFullscreenPlayer() {
+    // The wave page renders no fullscreen button: its desktop player bar is
+    // replaced by VibePlayerBar, so the site's own fullscreen toggle can only
+    // be reached through the keyboard. It is bound to the W shortcut
+    // (TOGGLE_FULLSCREEN_PLAYER) and the shortcut manager listens on window
+    // without checking isTrusted, so a synthetic keydown opens the player
+    // exactly like pressing W.
+    try {
+        window.dispatchEvent(new KeyboardEvent('keydown', {
+            code: 'KeyW',
+            key: 'w',
+            keyCode: 87,
+            which: 87,
+            bubbles: true,
+            cancelable: true,
+        }));
+    } catch (e) {}
 }
 
-function setWaveBgHideAnim(val) {
-    localStorage.setItem(WAVE_BG_HIDE_ANIM_KEY, val ? 'true' : 'false');
-}
-
-function onClickWaveBgToggle() {
-    var next = !isWaveBgEnabled();
-    setWaveBgEnabled(next);
-    setMenuItemToggle('ymt-wave-bg-title', next);
-    injectWaveBackground();
+function onWaveCoverClick(e) {
+    if (!isCoverFullscreenEnabled()) return;
+    if (e.defaultPrevented || e.button !== 0) return;
+    var target = e.target;
+    if (!target || !target.closest) return;
+    // Only the wave player bar's own cover: never a cover inside the already
+    // opened fullscreen player, and never the overlaid play button.
+    var cover = target.closest('[data-test-id="VIBE_ALBUM_COVER"]');
+    if (!cover || !cover.closest('[data-test-id="VIBE_PLAYERBAR"]')) return;
+    if (target.closest('button')) return;
+    // The cover is an <a href="/album/...">: swallow the click so it does not
+    // navigate to the album page, then open the fullscreen player instead.
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    openFullscreenPlayer();
 }
 
 var ANTISKIP_HOURS_KEY = 'ymtAntiSkipHours';
@@ -224,12 +246,7 @@ function getWaveStats() {
 function waveStatsLabel() {
     if (!isWaveFilterEnabled() && !isAntiSkipEnabled()) return '\u0424\u0438\u043b\u044c\u0442\u0440 \u0432\u043e\u043b\u043d\u044b \u0432\u044b\u043a\u043b\u044e\u0447\u0451\u043d';
     var stats = getWaveStats();
-    var total = stats.liked + stats.recent;
-    if (!total) return '\u0421\u0435\u0433\u043e\u0434\u043d\u044f \u043d\u0435 \u0441\u043a\u0440\u044b\u0442\u043e \u043d\u0438 \u043e\u0434\u043d\u043e\u0433\u043e \u0442\u0440\u0435\u043a\u0430';
-    var parts = [];
-    if (stats.liked) parts.push('\u043b\u0430\u0439\u043a\u0438 ' + stats.liked);
-    if (stats.recent) parts.push('\u043d\u0435\u0434\u0430\u0432\u043d\u0438\u0435 ' + stats.recent);
-    return '\u0421\u043a\u0440\u044b\u0442\u043e \u0441\u0435\u0433\u043e\u0434\u043d\u044f: ' + total + ' (' + parts.join(', ') + ')';
+    return '\u0421\u043a\u0440\u044b\u0442\u043e \u0441\u0435\u0433\u043e\u0434\u043d\u044f: ' + (stats.liked + stats.recent);
 }
 
 function getWaveStatsMenuItems() {
@@ -240,6 +257,513 @@ function getWaveStatsMenuItems() {
             fireInfoSwal(waveStatsLabel());
         },
     }];
+}
+
+// --- In-page "Плеер" panel (the site's 3-dots menu on the wave page) -------
+// The wave page's own context menu is the natural home for the sizing
+// controls, so the panel is appended into it when it opens. The menu is
+// rendered by React and only mounted while open, hence the watcher below.
+var VIBE_PANEL_ID = 'ymt-vibe-player-panel';
+// The menu the "3 dots" button opens carries this test id (its class hash
+// changes every build, the test id does not). The class is kept as a fallback.
+var VIBE_PANEL_MENU_SELECTORS = [
+    '[data-test-id="VIBE_CONTEXT_MENU"]',
+    '[class*="VibeContextButton_menu__"]',
+];
+// Same shrink factor as the popup preview, so both show the same proportions.
+var VIBE_PANEL_PREVIEW_SCALE = 0.22;
+
+function injectVibePlayerPanelStyle() {
+    if (document.getElementById('ymt-vibe-player-panel-style')) return;
+    var s = document.createElement('style');
+    s.id = 'ymt-vibe-player-panel-style';
+    s.textContent = [
+        '.ymt-vp{box-sizing:border-box;width:216px;margin-top:6px;padding-top:10px;border-top:1px solid rgba(255,255,255,.12);color:#fff;}',
+        '.ymt-vp *{box-sizing:border-box;}',
+        '.ymt-vp-title{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:8px;}',
+        '.ymt-vp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:rgba(255,255,255,.8);margin-bottom:4px;}',
+        '.ymt-vp-num{display:inline-flex;align-items:baseline;gap:1px;}',
+        '.ymt-vp-val{width:40px;padding:0;border:none;border-bottom:1px solid transparent;background:transparent;color:#ffff00;font:inherit;font-size:11px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;outline:none;}',
+        '.ymt-vp-val:focus{border-bottom-color:#ffff00;}',
+        '.ymt-vp-unit{font-size:11px;color:#ffff00;}',
+        '.ymt-vp-slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;margin:0 0 10px;border-radius:2px;background:rgba(255,255,255,.14);outline:none;cursor:pointer;}',
+        '.ymt-vp-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:#ffff00;cursor:pointer;}',
+        '.ymt-vp-slider::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;background:#ffff00;cursor:pointer;}',
+        '.ymt-vp-preview{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:120px;padding:10px;border-radius:12px;background:radial-gradient(120% 120% at 50% 0%, #26262e 0%, #131317 70%);overflow:hidden;}',
+        '.ymt-vp-cover{width:56px;height:56px;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#3a3a44,#22222a);background-size:cover;background-position:center;box-shadow:0 6px 18px rgba(0,0,0,.45);}',
+        '.ymt-vp-ptitle{font-size:26px;font-weight:700;line-height:1.1;color:#fff;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+        '.ymt-vp-partist{font-size:13px;font-weight:600;line-height:1.2;color:rgba(255,255,255,.72);text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    ].join('\n');
+    document.head.appendChild(s);
+}
+
+function getWaveCoverImageUrl() {
+    var img = document.querySelector('[data-test-id="VIBE_ALBUM_COVER"] img');
+    if (!img) return '';
+    return img.currentSrc || img.src || '';
+}
+
+function renderVibePanelPreview(panel, coverSize, textScale) {
+    var cover = Math.round(coverSize * VIBE_PANEL_PREVIEW_SCALE);
+    var title = Math.max(9, Math.round(40 * (textScale / 100) * VIBE_PANEL_PREVIEW_SCALE));
+    var artist = Math.max(7, Math.round(20 * (textScale / 100) * VIBE_PANEL_PREVIEW_SCALE));
+
+    var coverEl = panel.querySelector('.ymt-vp-cover');
+    if (coverEl) {
+        coverEl.style.width = cover + 'px';
+        coverEl.style.height = cover + 'px';
+        var url = getWaveCoverImageUrl();
+        if (url) coverEl.style.backgroundImage = 'url("' + url + '")';
+    }
+    var titleEl = panel.querySelector('.ymt-vp-ptitle');
+    if (titleEl) titleEl.style.fontSize = title + 'px';
+    var artistEl = panel.querySelector('.ymt-vp-partist');
+    if (artistEl) artistEl.style.fontSize = artist + 'px';
+}
+
+function wireVibePanelSlider(panel, slider, input, min, max, fallback, initial, apply) {
+    function clamp(value) {
+        var n = parseInt(value, 10);
+        if (isNaN(n)) return fallback;
+        if (n < min) return min;
+        if (n > max) return max;
+        return n;
+    }
+
+    function refresh() {
+        renderVibePanelPreview(panel, getCoverSize(), getTextScale());
+    }
+
+    function commit(value) {
+        var v = clamp(value);
+        slider.value = String(v);
+        input.value = String(v);
+        apply(v);
+        refresh();
+    }
+
+    slider.addEventListener('input', function () {
+        var v = clamp(slider.value);
+        input.value = String(v);
+        apply(v);
+        refresh();
+    });
+    slider.addEventListener('change', function () { commit(slider.value); });
+
+    // The value next to the label is editable by hand: digits only.
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.target.blur(); return; }
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !/[0-9]/.test(e.key)) e.preventDefault();
+    });
+    input.addEventListener('input', function () {
+        var digits = input.value.replace(/[^0-9]/g, '');
+        if (digits !== input.value) input.value = digits;
+        if (digits === '') return;
+        var v = clamp(digits);
+        slider.value = String(Math.min(Math.max(v, min), max));
+        apply(v);
+        refresh();
+    });
+    input.addEventListener('change', function () { commit(input.value); });
+    input.addEventListener('blur', function () { commit(input.value); });
+
+    commit(initial);
+}
+
+function buildVibePlayerPanel() {
+    var panel = document.createElement('div');
+    panel.id = VIBE_PANEL_ID;
+    panel.className = 'ymt-vp';
+    panel.innerHTML = [
+        '<div class="ymt-vp-title">\u041f\u043b\u0435\u0435\u0440</div>',
+        '<div class="ymt-vp-row"><span>\u041e\u0431\u043b\u043e\u0436\u043a\u0430</span><span class="ymt-vp-num"><input class="ymt-vp-val" data-vp="cover" type="text" inputmode="numeric"><span class="ymt-vp-unit">px</span></span></div>',
+        '<input class="ymt-vp-slider" data-vp="cover" type="range" min="96" max="512" step="8">',
+        '<div class="ymt-vp-row"><span>\u0422\u0435\u043a\u0441\u0442</span><span class="ymt-vp-num"><input class="ymt-vp-val" data-vp="text" type="text" inputmode="numeric"><span class="ymt-vp-unit">%</span></span></div>',
+        '<input class="ymt-vp-slider" data-vp="text" type="range" min="100" max="600" step="10">',
+        '<div class="ymt-vp-preview"><div class="ymt-vp-cover"></div><div class="ymt-vp-ptitle">\u041d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 \u0442\u0440\u0435\u043a\u0430</div><div class="ymt-vp-partist">\u0418\u0441\u043f\u043e\u043b\u043d\u0438\u0442\u0435\u043b\u044c</div></div>',
+    ].join('');
+
+    // Keep the site's menu handlers (outside-click close, item activation) out
+    // of the panel: dragging a slider must not close the menu.
+    ['click', 'mousedown', 'mouseup', 'keydown', 'keyup'].forEach(function (type) {
+        panel.addEventListener(type, function (e) { e.stopPropagation(); });
+    });
+
+    wireVibePanelSlider(
+        panel,
+        panel.querySelector('.ymt-vp-slider[data-vp="cover"]'),
+        panel.querySelector('.ymt-vp-val[data-vp="cover"]'),
+        96, 512, COVER_SIZE_DEFAULT, getCoverSize(),
+        function (v) { setCoverSize(v); injectAlbumCoverTweak(); }
+    );
+    wireVibePanelSlider(
+        panel,
+        panel.querySelector('.ymt-vp-slider[data-vp="text"]'),
+        panel.querySelector('.ymt-vp-val[data-vp="text"]'),
+        100, 600, TEXT_SCALE_DEFAULT, getTextScale(),
+        function (v) { setTextScale(v); injectVibeArtistLineStyle(); }
+    );
+
+    return panel;
+}
+
+function lowestCommonAncestor(nodes) {
+    if (!nodes || !nodes.length) return null;
+    var candidate = nodes[0].parentElement;
+    while (candidate && candidate !== document.body && candidate !== document.documentElement) {
+        var all = true;
+        for (var i = 0; i < nodes.length; i++) {
+            if (!candidate.contains(nodes[i])) { all = false; break; }
+        }
+        if (all) return candidate;
+        candidate = candidate.parentElement;
+    }
+    return null;
+}
+
+function findVibeContextMenu() {
+    for (var s = 0; s < VIBE_PANEL_MENU_SELECTORS.length; s++) {
+        var selector = VIBE_PANEL_MENU_SELECTORS[s];
+        var menus = document.querySelectorAll(selector);
+        for (var i = 0; i < menus.length; i++) {
+            var menu = menus[i];
+            var parent = menu.parentElement;
+            // A submenu is a menu inside a menu; only decorate the top-level one.
+            if (parent && parent.closest && parent.closest(selector)) continue;
+            return menu;
+        }
+    }
+    // Last resort: derive the container from the menu items, so a renamed menu
+    // class does not break the panel.
+    var items = document.querySelectorAll('[class*="VibeContextButton_menuItem"]');
+    if (items.length) return lowestCommonAncestor(items);
+    return null;
+}
+
+function matchesVibeContextMenu(node) {
+    if (!node || node.nodeType !== 1) return false;
+    for (var i = 0; i < VIBE_PANEL_MENU_SELECTORS.length; i++) {
+        if (node.matches && node.matches(VIBE_PANEL_MENU_SELECTORS[i])) return true;
+    }
+    return false;
+}
+
+// True when the node is, or contains, anything that marks the context menu -
+// including the item-class fallback, so the panel mounts on the first paint.
+function isVibeContextMenuNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (matchesVibeContextMenu(node)) return true;
+    if (node.querySelector && node.querySelector(
+        '[data-test-id="VIBE_CONTEXT_MENU"], [class*="VibeContextButton_menu__"], [class*="VibeContextButton_menuItem"]'
+    )) return true;
+    return false;
+}
+
+function mountVibePlayerPanel() {
+    var menu = findVibeContextMenu();
+    if (!menu) return;
+    if (menu.querySelector('#' + VIBE_PANEL_ID)) return;
+    menu.appendChild(buildVibePlayerPanel());
+}
+
+var _ymtVibeMenuObserver = null;
+
+function startVibeMenuWatcher() {
+    if (_ymtVibeMenuObserver) return;
+    _ymtVibeMenuObserver = new MutationObserver(function (mutations) {
+        if (getPageType() !== 'wave') return;
+        for (var i = 0; i < mutations.length; i++) {
+            var added = mutations[i].addedNodes;
+            for (var j = 0; j < added.length; j++) {
+                var node = added[j];
+                if (node.nodeType !== 1) continue;
+                if (isVibeContextMenuNode(node)) {
+                    mountVibePlayerPanel();
+                    return;
+                }
+            }
+        }
+    });
+    _ymtVibeMenuObserver.observe(document.documentElement || document, { subtree: true, childList: true });
+
+    // Safety net for a menu that was already mounted, or a mount this observer
+    // did not see as an added node.
+    setInterval(function () {
+        if (getPageType() === 'wave') mountVibePlayerPanel();
+    }, 1000);
+}
+
+// --- Громкость в полноэкранном плеере -------------------------------------
+// Плеер не держит <audio> в DOM, поэтому громкость задаётся напрямую
+// медиаэлементам через мост в MAIN-мире (fetch-interceptor.js): атрибут
+// <html data-ymt-volume> = процент громкости сайта (та же шкала, что у
+// штатного ползунка CHANGE_VOLUME_SLIDER). Штатный ползунок держим в
+// синхроне в обе стороны, пока пользователь не трогал наш регулятор —
+// не вмешиваемся вовсе.
+var VOLUME_KEY = 'ymtVolume';
+var VOLUME_ATTR = 'data-ymt-volume';
+var FS_VOLUME_ID = 'ymt-fs-volume';
+var FS_ROOT_SELECTOR = '[data-test-id="FULLSCREEN_PLAYER_FULLSCREEN_CONTENT"]';
+var FS_CONTROLS_SELECTOR = '[class*="FullscreenPlayerDesktopControls_root"]';
+var SITE_VOLUME_SLIDER_SELECTOR = '[data-test-id="CHANGE_VOLUME_SLIDER"]';
+var SITE_VOLUME_ICON_SELECTOR = '[data-test-id="CHANGE_VOLUME_BUTTON"]';
+var VOLUME_ICON_ON = '/music-spa/icons/sprite.svg#volume_xs';
+var VOLUME_ICON_OFF = '/music-spa/icons/sprite.svg#volumeOff_xs';
+
+var _volumePercent = null;
+var _volumeLastNonZero = 94;
+var _ymtVolumeInited = false;
+
+function clampVolumePercent(value) {
+    var n = Math.round(parseFloat(value));
+    if (!isFinite(n) || n < 0) return 0;
+    if (n > 100) return 100;
+    return n;
+}
+
+function readStoredVolume() {
+    try {
+        var raw = localStorage.getItem(VOLUME_KEY);
+        if (raw === null || raw === '') return null;
+        var n = parseInt(raw, 10);
+        if (!isFinite(n)) return null;
+        return clampVolumePercent(n);
+    } catch (e) {
+        return null;
+    }
+}
+
+function getSiteVolumePercent() {
+    var slider = document.querySelector(SITE_VOLUME_SLIDER_SELECTOR);
+    if (!slider) return null;
+    var v = parseFloat(slider.value);
+    if (!isFinite(v)) return null;
+    return clampVolumePercent(v * 100);
+}
+
+function getVolumePercent() {
+    if (_volumePercent !== null) return _volumePercent;
+    var stored = readStoredVolume();
+    if (stored !== null) return stored;
+    var site = getSiteVolumePercent();
+    if (site !== null) return site;
+    return 100;
+}
+
+function syncSiteVolumeSlider(percent) {
+    var slider = document.querySelector(SITE_VOLUME_SLIDER_SELECTOR);
+    if (!slider) return;
+    var value = String(clampVolumePercent(percent) / 100);
+    if (Math.abs((parseFloat(slider.value) || 0) - parseFloat(value)) < 0.005) return;
+    try {
+        var desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+        if (desc && desc.set) desc.set.call(slider, value);
+        else slider.value = value;
+    } catch (e) {
+        slider.value = value;
+    }
+    // Сообщаем React'у, что значение изменилось, чтобы состояние сайта
+    // (и иконка mute) тоже обновилось.
+    try {
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (e) {}
+}
+
+function setVolumePercent(percent, fromSite) {
+    percent = clampVolumePercent(percent);
+    _volumePercent = percent;
+    if (percent > 0) _volumeLastNonZero = percent;
+    try { localStorage.setItem(VOLUME_KEY, String(percent)); } catch (e) {}
+    try { document.documentElement.setAttribute(VOLUME_ATTR, String(percent)); } catch (e) {}
+    if (!fromSite) syncSiteVolumeSlider(percent);
+    updateFullscreenVolumeIcon(percent);
+}
+
+function onSiteVolumeInput(e) {
+    var t = e.target;
+    if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-test-id') !== 'CHANGE_VOLUME_SLIDER') return;
+    var v = parseFloat(t.value);
+    if (!isFinite(v)) return;
+    var percent = clampVolumePercent(v * 100);
+    _volumePercent = percent;
+    if (percent > 0) _volumeLastNonZero = percent;
+    try { localStorage.setItem(VOLUME_KEY, String(percent)); } catch (e) {}
+    try { document.documentElement.setAttribute(VOLUME_ATTR, String(percent)); } catch (e) {}
+    updateFullscreenVolumeIcon(percent);
+}
+
+function injectFullscreenVolumeStyle() {
+    if (document.getElementById('ymt-fs-volume-style')) return;
+    var s = document.createElement('style');
+    s.id = 'ymt-fs-volume-style';
+    s.textContent = [
+        // Верхний левый угол оверлея управления: сетка сайта 3x3, ячейка (1,1).
+        '#ymt-fs-volume{grid-column:1;grid-row:1;justify-self:flex-start;align-self:flex-start;margin-inline-start:var(--ym-spacer-size-l,1.5rem);margin-block-start:var(--ym-spacer-size-l,1.5rem);display:flex;align-items:center;color:#fff;}',
+        '#ymt-fs-volume.ymt-fs-volume_floating{position:absolute;inset-block-start:var(--ym-spacer-size-l,1.5rem);inset-inline-start:var(--ym-spacer-size-l,1.5rem);z-index:2;}',
+        '#ymt-fs-volume .ymt-fs-volume__btn{display:inline-flex;align-items:center;justify-content:center;width:3rem;height:3rem;padding:0;margin:0;border:none;border-radius:50%;background:var(--ym-controls-color-secondary-card-enabled,rgba(255,255,255,.1));color:var(--ym-controls-color-secondary-text-enabled_variant,#fff);cursor:pointer;transition:background-color .2s ease,transform .2s ease;}',
+        '#ymt-fs-volume .ymt-fs-volume__btn:hover{background:var(--ym-controls-color-secondary-card-hovered,rgba(255,255,255,.2));transform:scale(1.05);}',
+        '#ymt-fs-volume .ymt-fs-volume__btn_muted{color:rgba(255,255,255,.6);}',
+        '#ymt-fs-volume .ymt-fs-volume__btn svg{width:1.75rem;height:1.75rem;display:block;fill:currentColor;}',
+        '#ymt-fs-volume .ymt-fs-volume__slider{-webkit-appearance:none;appearance:none;width:0;height:4px;margin:0;padding:0;border-radius:2px;background:linear-gradient(to right,#fff var(--ymt-vol,94%),rgba(255,255,255,.3) var(--ymt-vol,94%));outline:none;cursor:pointer;opacity:0;transition:width .18s ease,opacity .18s ease,margin .18s ease;}',
+        '#ymt-fs-volume:hover .ymt-fs-volume__slider,#ymt-fs-volume:focus-within .ymt-fs-volume__slider{width:120px;opacity:1;margin-inline-start:12px;}',
+        '#ymt-fs-volume .ymt-fs-volume__slider::-moz-range-track{height:4px;border-radius:2px;background:transparent;}',
+        '#ymt-fs-volume .ymt-fs-volume__slider::-moz-range-progress{height:4px;border-radius:2px;background:transparent;}',
+        '#ymt-fs-volume .ymt-fs-volume__slider::-moz-range-thumb{width:14px;height:14px;border:none;border-radius:50%;background:#fff;cursor:pointer;}',
+        '#ymt-fs-volume .ymt-fs-volume__slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border:none;border-radius:50%;background:#fff;cursor:pointer;}',
+    ].join('\n');
+    document.head.appendChild(s);
+}
+
+function buildFullscreenVolumeIcon() {
+    // Копируем ту же иконку динамика, что в панели плеера.
+    var svg = document.querySelector(SITE_VOLUME_ICON_SELECTOR + ' svg');
+    if (svg) {
+        try { return svg.cloneNode(true); } catch (e) {}
+    }
+    var tmp = document.createElement('div');
+    tmp.innerHTML = '<svg focusable="false" aria-hidden="true"><use href="' + VOLUME_ICON_ON + '"></use></svg>';
+    return tmp.firstChild;
+}
+
+function setFullscreenVolumeIconState(percent) {
+    var wrap = document.getElementById(FS_VOLUME_ID);
+    if (!wrap) return;
+    var muted = percent <= 0;
+    var use = wrap.querySelector('use');
+    if (use) {
+        var ref = muted ? VOLUME_ICON_OFF : VOLUME_ICON_ON;
+        use.setAttribute('href', ref);
+        use.setAttribute('xlink:href', ref);
+    }
+    var btn = wrap.querySelector('[data-ymt-fs-volume-btn]');
+    if (btn) {
+        btn.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
+        if (muted) btn.classList.add('ymt-fs-volume__btn_muted');
+        else btn.classList.remove('ymt-fs-volume__btn_muted');
+    }
+}
+
+function updateFullscreenVolumeIcon(percent) {
+    var wrap = document.getElementById(FS_VOLUME_ID);
+    if (!wrap) return;
+    var v = clampVolumePercent(percent);
+    var slider = wrap.querySelector('[data-ymt-fs-volume-slider]');
+    if (slider) {
+        slider.style.setProperty('--ymt-vol', v + '%');
+        if (document.activeElement !== slider) slider.value = String(v);
+    }
+    setFullscreenVolumeIconState(v);
+}
+
+function onFullscreenVolumeInput(e) {
+    var v = parseFloat(e.target.value);
+    if (!isFinite(v)) return;
+    setVolumePercent(v, false);
+}
+
+function onFullscreenVolumeMute(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    var current = getVolumePercent();
+    if (current > 0) {
+        _volumeLastNonZero = current;
+        setVolumePercent(0, false);
+    } else {
+        setVolumePercent(_volumeLastNonZero || 94, false);
+    }
+}
+
+function buildFullscreenVolume() {
+    var wrap = document.createElement('div');
+    wrap.id = FS_VOLUME_ID;
+    wrap.className = 'ymt-fs-volume';
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ymt-fs-volume__btn';
+    btn.setAttribute('data-ymt-fs-volume-btn', '1');
+    btn.setAttribute('aria-label', 'Выключить звук');
+    btn.appendChild(buildFullscreenVolumeIcon());
+
+    var slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'ymt-fs-volume__slider';
+    slider.min = '0';
+    slider.max = '100';
+    slider.step = '1';
+    slider.setAttribute('data-ymt-fs-volume-slider', '1');
+    slider.setAttribute('aria-label', 'Громкость');
+
+    wrap.appendChild(btn);
+    wrap.appendChild(slider);
+
+    // Не даём сайту закрыть полный экран/меню при перетаскивании ползунка.
+    ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'input', 'change', 'keydown', 'keyup'].forEach(function (type) {
+        wrap.addEventListener(type, function (e) { e.stopPropagation(); });
+    });
+    btn.addEventListener('click', onFullscreenVolumeMute);
+    slider.addEventListener('input', onFullscreenVolumeInput);
+
+    var percent = getVolumePercent();
+    slider.value = String(percent);
+    slider.style.setProperty('--ymt-vol', percent + '%');
+    setFullscreenVolumeIconState(percent);
+    return wrap;
+}
+
+function mountFullscreenVolume() {
+    var root = document.querySelector(FS_ROOT_SELECTOR);
+    if (!root) return;
+    if (root.querySelector('#' + FS_VOLUME_ID)) return;
+
+    var wrap = buildFullscreenVolume();
+
+    // Верхний левый угол оверлея управления (сетка 3x3 сайта).
+    var controls = root.querySelector(FS_CONTROLS_SELECTOR);
+    if (controls) {
+        controls.appendChild(wrap);
+        return;
+    }
+    // Запасной вариант, если классы сайта изменятся.
+    wrap.classList.add('ymt-fs-volume_floating');
+    root.appendChild(wrap);
+}
+
+var _ymtFsVolumeObserver = null;
+
+function startFullscreenVolumeWatcher() {
+    if (_ymtFsVolumeObserver) return;
+    _ymtFsVolumeObserver = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+            var added = mutations[i].addedNodes;
+            for (var j = 0; j < added.length; j++) {
+                var node = added[j];
+                if (node.nodeType !== 1) continue;
+                if (node.matches && (node.matches(FS_ROOT_SELECTOR) || node.querySelector(FS_ROOT_SELECTOR))) {
+                    mountFullscreenVolume();
+                    return;
+                }
+            }
+        }
+    });
+    _ymtFsVolumeObserver.observe(document.documentElement || document, { subtree: true, childList: true });
+
+    // Запасной вариант для уже открытого плеера.
+    setInterval(mountFullscreenVolume, 1000);
+}
+
+function initVolume() {
+    if (!_ymtVolumeInited) {
+        _ymtVolumeInited = true;
+        document.addEventListener('input', onSiteVolumeInput, true);
+    }
+    var stored = readStoredVolume();
+    if (stored !== null) {
+        setVolumePercent(stored, false);
+    } else {
+        _volumePercent = getSiteVolumePercent();
+        updateFullscreenVolumeIcon(getVolumePercent());
+    }
 }
 
 function isDatesEnabled(callback) {
@@ -437,14 +961,19 @@ function injectSwalDarkTheme() {
 }
 
 function injectAlbumCoverTweak() {
-    if (document.getElementById('ymt-album-cover-tweak')) return;
-    var s = document.createElement('style');
-    s.id = 'ymt-album-cover-tweak';
+    // Re-runnable: the "Плеер" sliders update the cover size live, so rewrite
+    // the same <style> instead of bailing out when it already exists.
+    var size = getCoverSize();
+    var s = document.getElementById('ymt-album-cover-tweak');
+    if (!s) {
+        s = document.createElement('style');
+        s.id = 'ymt-album-cover-tweak';
+        document.head.appendChild(s);
+    }
     s.textContent = [
-        '[class*="AlbumCover_link"] { width: 256px !important; height: 256px !important; min-width: 256px !important; min-height: 256px !important; max-width: none !important; max-height: none !important; flex-shrink: 0; display: inline-block !important; }',
-        '[class*="AlbumCover_cover"] { width: 256px !important; height: 256px !important; object-fit: cover !important; }',
+        '[class*="AlbumCover_link"] { width: ' + size + 'px !important; height: ' + size + 'px !important; min-width: ' + size + 'px !important; min-height: ' + size + 'px !important; max-width: none !important; max-height: none !important; flex-shrink: 0; display: inline-block !important; }',
+        '[class*="AlbumCover_cover"] { width: ' + size + 'px !important; height: ' + size + 'px !important; object-fit: cover !important; }',
     ].join('\n');
-    document.head.appendChild(s);
 }
 
 function injectVibeResetButtonHide() {
@@ -601,11 +1130,22 @@ function setVibeBigText(bigEl, text) {
 }
 
 function injectVibeArtistLineStyle() {
-    if (document.getElementById('ymt-vibe-artist-line-style')) return;
-    var s = document.createElement('style');
-    s.id = 'ymt-vibe-artist-line-style';
+    // Re-runnable: the "Плеер" text-size slider rewrites this <style> live.
+    var scale = getTextScale() / 100;
+    var artistPx = Math.round(20 * scale);
+    var s = document.getElementById('ymt-vibe-artist-line-style');
+    if (!s) {
+        s = document.createElement('style');
+        s.id = 'ymt-vibe-artist-line-style';
+        document.head.appendChild(s);
+    }
     s.textContent = [
-        '#' + VIBE_ARTIST_LINE_ID + '{display:block!important;width:100%!important;flex:0 0 auto!important;font-size:20px!important;line-height:1.3!important;font-weight:600!important;margin-top:6px;text-align:center;opacity:.72;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;position:relative;z-index:3;}',
+        // The site sizes the big track title with --dynamic-font-size. Scale it
+        // by the user factor and let the whole block grow with it.
+        '[class*="VibeDynamicArtists_root"]{font-size:calc(var(--dynamic-font-size, 40px) * ' + scale + ')!important;}',
+        '[class*="VibeDynamicArtists_root"] [class*="VibePage_text__"]{font-size:calc(var(--dynamic-font-size, 40px) * ' + scale + ')!important;line-height:var(--dynamic-line-height, 1)!important;}',
+        // Artist name line: same factor applied to its 20px base.
+        '#' + VIBE_ARTIST_LINE_ID + '{display:block!important;width:100%!important;flex:0 0 auto!important;font-size:' + artistPx + 'px!important;line-height:1.2!important;font-weight:600!important;margin-top:6px;text-align:center;opacity:.72;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;position:relative;z-index:3;}',
         '.ymt-vibe-extra-artist{display:none!important;}',
         // The site's wave text container is a fixed 4rem tall (its
         // --artists-with-cover-height) and stretches the title block to fill
@@ -642,161 +1182,6 @@ function injectVibePlayerTextHide() {
             '[class*="VibePlayerbarTimecodeWithTooltip_timecode"]:focus,' +
             '[data-test-id="VIBE_PLAYERBAR_TIMECODE"]:focus{opacity:1!important;}',
     ].join('\n');
-    document.head.appendChild(s);
-}
-
-var VIBE_GLASS_SCOPE = '[class*="MainPage_vibeWidgetContainer"]';
-
-function injectVibeGlass() {
-    // Optional "Liquid Glass" skin for the wave page: frosted, translucent
-    // surfaces with a soft inner highlight and big radii, in the spirit of the
-    // iOS 26 look. Purely cosmetic and scoped to the wave widget, so it never
-    // touches the rest of Yandex Music. Controlled by the "ymtGlassTheme" flag.
-    var existing = document.getElementById('ymt-vibe-glass');
-    if (!isGlassEnabled()) {
-        if (existing) existing.remove();
-        return;
-    }
-    if (existing) return;
-
-    var s = document.createElement('style');
-    s.id = 'ymt-vibe-glass';
-    s.textContent = [
-        // NOTE ON PERFORMANCE: an earlier version put a backdrop-filter on the
-        // full-screen backdrop and used 26-60px blur + saturate() on every
-        // surface. Over the wave's animating <canvas> that re-composites the
-        // whole viewport each frame and froze Firefox ("this extension is
-        // slowing the browser"). The frost is now kept to small, bounded
-        // surfaces with modest radii and no saturate pass.
-
-        // Wave side-cards become glass tiles.
-        VIBE_GLASS_SCOPE + ' [class*="WheelItem_root"]{' +
-            'background:rgba(255,255,255,.10)!important;' +
-            '-webkit-backdrop-filter:blur(12px)!important;' +
-            'backdrop-filter:blur(12px)!important;' +
-            'border:1px solid rgba(255,255,255,.20)!important;' +
-            'border-radius:22px!important;' +
-            'box-shadow:inset 0 1px 0 rgba(255,255,255,.32),0 10px 26px rgba(0,0,0,.28)!important;}',
-        VIBE_GLASS_SCOPE + ' [class*="VibeSmallView_root"]{' +
-            'border-radius:20px!important;}',
-
-        // The player bar turns into a frosted pill. No overflow clipping here:
-        // the timecode tooltip pops outside the bar and must stay visible.
-        VIBE_GLASS_SCOPE + ' [class*="VibePlayerBar_root"]{' +
-            'background:rgba(255,255,255,.12)!important;' +
-            '-webkit-backdrop-filter:blur(14px)!important;' +
-            'backdrop-filter:blur(14px)!important;' +
-            'border:1px solid rgba(255,255,255,.22)!important;' +
-            'border-radius:28px!important;' +
-            'box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 12px 34px rgba(0,0,0,.30)!important;}',
-
-        // Controls and sliders get the same frosted treatment.
-        VIBE_GLASS_SCOPE + ' [class*="VibePlayerBar_button"]{' +
-            'background:rgba(255,255,255,.14)!important;' +
-            'border:1px solid rgba(255,255,255,.20)!important;' +
-            'border-radius:50%!important;' +
-            'box-shadow:inset 0 1px 0 rgba(255,255,255,.30)!important;}',
-        VIBE_GLASS_SCOPE + ' [class*="VibePlayerBar_progress"],' +
-            VIBE_GLASS_SCOPE + ' [class*="VibePlayerbarMeta_slider"]{' +
-            'background:rgba(255,255,255,.20)!important;' +
-            'border-radius:999px!important;}',
-
-        // Reset button and album art get the matching glass frame.
-        VIBE_GLASS_SCOPE + ' [class*="VibeResetButton_root"]{' +
-            'background:rgba(255,255,255,.14)!important;' +
-            'border:1px solid rgba(255,255,255,.22)!important;' +
-            'border-radius:999px!important;' +
-            'box-shadow:inset 0 1px 0 rgba(255,255,255,.30),0 8px 20px rgba(0,0,0,.25)!important;}',
-        VIBE_GLASS_SCOPE + ' [class*="VibePage_albumCover"],' +
-            VIBE_GLASS_SCOPE + ' [class*="VibePage_artistCover"]{' +
-            'border-radius:24px!important;' +
-            'box-shadow:0 18px 50px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.18)!important;}',
-    ].join('\n');
-    document.head.appendChild(s);
-}
-
-// --- Wave background: a fixed colour/gradient with an optional shape layer ---
-//
-// Yandex paints the wave backdrop from an empty div (VibePage_bigCardPanelBackground)
-// whose --track-color is rewritten on every track change. We override that inline
-// value with !important and draw our own layered background instead: a base colour,
-// a soft gradient, and an SVG "shape" blended on top with background-blend-mode.
-var WAVE_BG_SCOPE = '[class*="MainPage_vibeWidgetContainer"] [class*="VibePage_bigCardPanelBackground"]';
-var WAVE_BG_ANIM_SEL = '[class*="MainPage_vibeWidgetContainer"] [class*="VibePage_vibeAnimation"]';
-
-var WAVE_BG_SHAPES = {
-    none: '',
-    waves:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="none">' +
-        '<path d="M0 300 C300 200 400 420 700 320 S1100 240 1200 300V800H0Z" fill="#fff" fill-opacity=".07"/>' +
-        '<path d="M0 430 C300 350 500 550 800 450 S1100 390 1200 450V800H0Z" fill="#fff" fill-opacity=".055"/>' +
-        '<path d="M0 560 C300 480 520 680 820 580 S1120 520 1200 580V800H0Z" fill="#fff" fill-opacity=".04"/>' +
-        '</svg>',
-    blobs:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="none">' +
-        '<circle cx="260" cy="200" r="340" fill="#fff" fill-opacity=".07"/>' +
-        '<circle cx="980" cy="620" r="400" fill="#fff" fill-opacity=".055"/>' +
-        '<circle cx="720" cy="150" r="180" fill="#fff" fill-opacity=".045"/>' +
-        '</svg>',
-    contours:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="none">' +
-        '<g fill="none" stroke="#fff" stroke-opacity=".11" stroke-width="2">' +
-        '<circle cx="600" cy="400" r="90"/><circle cx="600" cy="400" r="180"/>' +
-        '<circle cx="600" cy="400" r="270"/><circle cx="600" cy="400" r="360"/>' +
-        '<circle cx="600" cy="400" r="450"/><circle cx="600" cy="400" r="540"/>' +
-        '</g></svg>',
-    dots:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="none">' +
-        '<defs><pattern id="p" width="60" height="60" patternUnits="userSpaceOnUse">' +
-        '<circle cx="6" cy="6" r="3" fill="#fff" fill-opacity=".18"/></pattern></defs>' +
-        '<rect width="1200" height="800" fill="url(#p)"/></svg>',
-    grid:
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="none">' +
-        '<defs><pattern id="g" width="80" height="80" patternUnits="userSpaceOnUse">' +
-        '<path d="M80 0H0V80" fill="none" stroke="#fff" stroke-opacity=".10" stroke-width="1"/></pattern></defs>' +
-        '<rect width="1200" height="800" fill="url(#g)"/></svg>',
-};
-
-function waveBgDataUri(svg) {
-    return 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
-}
-
-function injectWaveBackground() {
-    var existing = document.getElementById('ymt-wave-bg');
-    if (!isWaveBgEnabled()) {
-        if (existing) existing.remove();
-        return;
-    }
-
-    var color = getWaveBgColor();
-    var shape = getWaveBgShape();
-    var svg = WAVE_BG_SHAPES[shape] || '';
-    var images = [];
-    if (svg) images.push(waveBgDataUri(svg));
-    // Base gradient: a touch of light at the top, falling into shadow.
-    images.push('linear-gradient(165deg, rgba(255,255,255,.10), rgba(0,0,0,.62))');
-    var blend = (svg ? 'soft-light, ' : '') + 'normal';
-
-    var css = [
-        WAVE_BG_SCOPE + '{' +
-            'background-color:' + color + '!important;' +
-            'background-image:' + images.join(', ') + '!important;' +
-            'background-size:cover!important;' +
-            'background-position:center!important;' +
-            'background-repeat:no-repeat!important;' +
-            'background-blend-mode:' + blend + '!important;' +
-            // Pin the colour so Yandex stops recolouring it per track.
-            '--track-color:' + color + '!important;' +
-            '--lumen-color:transparent!important;}',
-    ];
-    if (isWaveBgHideAnim()) {
-        css.push(WAVE_BG_ANIM_SEL + '{display:none!important;}');
-    }
-
-    if (existing) existing.remove();
-    var s = document.createElement('style');
-    s.id = 'ymt-wave-bg';
-    s.textContent = css.join('\n');
     document.head.appendChild(s);
 }
 
@@ -1106,19 +1491,21 @@ function injectTrackDates() {
 }
 
 // --- Initializers ---------------------------------------------------------
-// Run last, after every declaration above. Several injectors read module-level
-// constants that are assigned further down the file (VIBE_GLASS_SCOPE,
-// WAVE_BG_SCOPE, WAVE_BG_SHAPES, ...). Because `var` hoists the name but not
-// the value, calling them earlier handed those constants `undefined` and the
-// injected CSS silently became "undefined{...}".
+// Run last, after every declaration above.
 injectSwalDarkTheme();
 injectAlbumCoverTweak();
 injectVibeResetButtonHide();
 injectVibeWordsHide();
 injectVibeArtistLineStyle();
 injectVibePlayerTextHide();
-injectVibeGlass();
-injectWaveBackground();
+injectVibePlayerPanelStyle();
+startVibeMenuWatcher();
+injectFullscreenVolumeStyle();
+initVolume();
+startFullscreenVolumeWatcher();
+// Capture phase on document: swallow the cover click before React's own
+// handler (attached on the app root) and the anchor's navigation can run.
+document.addEventListener('click', onWaveCoverClick, true);
 initUrlObserver();
 syncTelemetryState();
 fillContent();
