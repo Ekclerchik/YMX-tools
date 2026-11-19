@@ -44,13 +44,20 @@
 
     // --- Громкость: мост между UI расширения и медиаэлементами ---
     // Плеер не держит <audio> в DOM, поэтому громкость задаём прямо
-    // медиаэлементам и перехватываем setter volume, чтобы сайт не сбрасывал
-    // выставленное значение. Желаемое значение приходит из content-скрипта
-    // через атрибут <html data-ymt-volume> = процент «экспоненциальной»
-    // громкости сайта (та же шкала, что у ползунка CHANGE_VOLUME_SLIDER).
+    // медиаэлементам. Желаемое значение приходит из content-скрипта через
+    // атрибут <html data-ymt-volume> = процент «экспоненциальной» громкости
+    // сайта (та же шкала, что у ползунка CHANGE_VOLUME_SLIDER).
     // Отсутствие атрибута или отрицательное значение = не вмешиваться.
+    //
+    // ВАЖНО: setter volume НЕ навязывает наше значение — иначе штатные
+    // кнопки/ползунок сайта не смогут менять громкость («залипание»).
+    // Вместо этого мы запоминаем фактическую громкость (чтобы новые
+    // медиаэлементы получали актуальное значение) и сообщаем её
+    // content-скрипту через <html data-ymt-volume-live>.
     (function hookVolume() {
         var VOL_ATTR = 'data-ymt-volume';
+        var SEQ_ATTR = 'data-ymt-volume-seq';
+        var LIVE_ATTR = 'data-ymt-volume-live';
         var _desired = null; // линейная громкость 0..1 или null (прозрачный режим)
 
         // Шкала сайта: exponentVolume e -> линейная громкость 0.01^(1-e),
@@ -61,6 +68,16 @@
             if (p > 100) p = 100;
             var v = Math.pow(0.01, 1 - (p / 100));
             return v > 0.01 ? v : 0;
+        }
+
+        // Обратное преобразование: линейная громкость -> процент сайта.
+        function volumeToPercent(v) {
+            if (!isFinite(v) || v <= 0.01) return 0;
+            if (v >= 1) return 100;
+            var p = Math.round((1 - Math.log(v) / Math.log(0.01)) * 100);
+            if (p < 0) return 0;
+            if (p > 100) return 100;
+            return p;
         }
 
         function readAttr() {
@@ -86,8 +103,21 @@
         }
         window.__ymtApplyVolumeAll = applyAll;
 
-        // Перехват setter'а: сайт выставляет громкость при создании/смене
-        // элемента — принудительно возвращаем нашу.
+        // Сообщаем content-скрипту фактическую громкость: её мог выставить
+        // сам сайт (кнопкой, ползунком или колесом), и наш UI должен это
+        // отразить.
+        function publishLive(v) {
+            try {
+                var root = document.documentElement;
+                if (!root) return;
+                var p = String(volumeToPercent(v));
+                if (root.getAttribute(LIVE_ATTR) !== p) root.setAttribute(LIVE_ATTR, p);
+            } catch (e) {}
+        }
+
+        // Перехват setter'а: только запоминаем фактическое значение, чтобы
+        // новые медиаэлементы получали актуальную громкость. Своё значение
+        // не навязываем — сайт волен менять громкость своими средствами.
         try {
             var d = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume');
             if (d && d.set) {
@@ -96,7 +126,7 @@
                     enumerable: !!d.enumerable,
                     get: function () { return d.get.call(this); },
                     set: function (v) {
-                        if (_desired !== null) v = _desired;
+                        try { _desired = v; publishLive(v); } catch (e) {}
                         return d.set.call(this, v);
                     },
                 });
@@ -112,7 +142,7 @@
                     _desired = next;
                     applyAll();
                 });
-                mo.observe(document.documentElement, { attributes: true, attributeFilter: [VOL_ATTR] });
+                mo.observe(document.documentElement, { attributes: true, attributeFilter: [VOL_ATTR, SEQ_ATTR] });
             }
         } catch (e) {}
 

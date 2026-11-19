@@ -497,11 +497,17 @@ function startVibeMenuWatcher() {
 // Плеер не держит <audio> в DOM, поэтому громкость задаётся напрямую
 // медиаэлементам через мост в MAIN-мире (fetch-interceptor.js): атрибут
 // <html data-ymt-volume> = процент громкости сайта (та же шкала, что у
-// штатного ползунка CHANGE_VOLUME_SLIDER). Штатный ползунок держим в
-// синхроне в обе стороны, пока пользователь не трогал наш регулятор —
-// не вмешиваемся вовсе.
+// штатного ползунка CHANGE_VOLUME_SLIDER), data-ymt-volume-seq — счётчик,
+// который заставляет мост применить значение заново.
+//
+// Наш регулятор НЕ подменяет setter volume, а двигает штатный ползунок
+// сайта, поэтому состояние сайта остаётся главным и его собственные кнопки
+// громкости продолжают работать. Изменения, сделанные сайтом, MAIN-мир
+// сообщает обратно через <html data-ymt-volume-live>.
 var VOLUME_KEY = 'ymtVolume';
 var VOLUME_ATTR = 'data-ymt-volume';
+var VOLUME_SEQ_ATTR = 'data-ymt-volume-seq';
+var VOLUME_LIVE_ATTR = 'data-ymt-volume-live';
 var FS_VOLUME_ID = 'ymt-fs-volume';
 var FS_ROOT_SELECTOR = '[data-test-id="FULLSCREEN_PLAYER_FULLSCREEN_CONTENT"]';
 var FS_CONTROLS_SELECTOR = '[class*="FullscreenPlayerDesktopControls_root"]';
@@ -512,6 +518,7 @@ var VOLUME_ICON_OFF = '/music-spa/icons/sprite.svg#volumeOff_xs';
 
 var _volumePercent = null;
 var _volumeLastNonZero = 94;
+var _volumeSeq = 0;
 var _ymtVolumeInited = false;
 
 function clampVolumePercent(value) {
@@ -574,7 +581,12 @@ function setVolumePercent(percent, fromSite) {
     _volumePercent = percent;
     if (percent > 0) _volumeLastNonZero = percent;
     try { localStorage.setItem(VOLUME_KEY, String(percent)); } catch (e) {}
-    try { document.documentElement.setAttribute(VOLUME_ATTR, String(percent)); } catch (e) {}
+    try {
+        document.documentElement.setAttribute(VOLUME_ATTR, String(percent));
+        // Счётчик всегда меняется, поэтому мост в MAIN-мире применит значение
+        // к медиаэлементам, даже если процент совпал с прошлым.
+        document.documentElement.setAttribute(VOLUME_SEQ_ATTR, String(++_volumeSeq));
+    } catch (e) {}
     if (!fromSite) syncSiteVolumeSlider(percent);
     updateFullscreenVolumeIcon(percent);
 }
@@ -591,6 +603,22 @@ function onSiteVolumeInput(e) {
     try { localStorage.setItem(VOLUME_KEY, String(percent)); } catch (e) {}
     try { document.documentElement.setAttribute(VOLUME_ATTR, String(percent)); } catch (e) {}
     updateFullscreenVolumeIcon(percent);
+}
+
+// MAIN-мир сообщает фактическую громкость медиа (её мог изменить сам сайт
+// своими кнопками/ползунком/колесом). Отражаем это в нашем UI, но обратно
+// ничего не пишем, чтобы не зациклиться.
+function onVolumeLive() {
+    try {
+        var raw = document.documentElement.getAttribute(VOLUME_LIVE_ATTR);
+        if (raw === null || raw === '') return;
+        var percent = clampVolumePercent(parseInt(raw, 10));
+        if (percent === _volumePercent) return;
+        _volumePercent = percent;
+        if (percent > 0) _volumeLastNonZero = percent;
+        try { localStorage.setItem(VOLUME_KEY, String(percent)); } catch (e) {}
+        updateFullscreenVolumeIcon(percent);
+    } catch (e) {}
 }
 
 function injectFullscreenVolumeStyle() {
@@ -662,6 +690,14 @@ function onFullscreenVolumeInput(e) {
     setVolumePercent(v, false);
 }
 
+// Колесо меняет громкость на 1% за щелчок — как в оригинальном плеере.
+function onFullscreenVolumeWheel(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var step = (e.deltaY || 0) > 0 ? -1 : 1;
+    setVolumePercent(getVolumePercent() + step, false);
+}
+
 function onFullscreenVolumeMute(e) {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     var current = getVolumePercent();
@@ -703,6 +739,7 @@ function buildFullscreenVolume() {
     });
     btn.addEventListener('click', onFullscreenVolumeMute);
     slider.addEventListener('input', onFullscreenVolumeInput);
+    wrap.addEventListener('wheel', onFullscreenVolumeWheel, { passive: false });
 
     var percent = getVolumePercent();
     slider.value = String(percent);
@@ -752,10 +789,21 @@ function startFullscreenVolumeWatcher() {
     setInterval(mountFullscreenVolume, 1000);
 }
 
+var _ymtVolumeLiveObserver = null;
+
+function startVolumeLiveObserver() {
+    if (_ymtVolumeLiveObserver) return;
+    var root = document.documentElement;
+    if (!root) return;
+    _ymtVolumeLiveObserver = new MutationObserver(onVolumeLive);
+    _ymtVolumeLiveObserver.observe(root, { attributes: true, attributeFilter: [VOLUME_LIVE_ATTR] });
+}
+
 function initVolume() {
     if (!_ymtVolumeInited) {
         _ymtVolumeInited = true;
         document.addEventListener('input', onSiteVolumeInput, true);
+        startVolumeLiveObserver();
     }
     var stored = readStoredVolume();
     if (stored !== null) {
